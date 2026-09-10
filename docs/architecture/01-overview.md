@@ -68,8 +68,8 @@ document's analysis, elaborated in [02](02-why-not-managed.md)).
                           │     serving/ (asyncio + gRPC)   │
                           │     :7000                       │
                           └────────┬───────────────┬────────┘
-                 3-char GeoHash   │               │ top-k candidates
-              (data-center tier) ─┘               ▼
+                 3-char GeoHash    │               │ top-k candidates
+              (data-center tier)  ─┘               ▼
         ┌───────────────────────────┐   ┌──────────────────────────────────┐
         │  ROUTING LAYER            │   │   GPU INFERENCE TIER (H100 SXM5) │
         │  engine/client            │   │   models/ · compiler/ · kernels/ │
