@@ -1,0 +1,43 @@
+Vectra — Geo-Distributed Vector Search and Transformer Inference Engine
+Copyright 2025 Vectra Labs
+
+This product includes software developed at Vectra Labs
+(https://github.com/vectra-labs/vectra).
+
+This product includes software developed by third parties:
+
+  * gRPC (C++ asynchronous core) — Copyright The gRPC Authors.
+    Licensed under the Apache License, Version 2.0.
+
+  * Protocol Buffers (contract serialization) — Copyright Google LLC.
+    Licensed under the BSD 3-Clause License.
+
+  * Abseil C++ (containers, utilities) — Copyright The Abseil Authors.
+    Licensed under the Apache License, Version 2.0.
+
+  * Google Highway (portable SIMD) — Copyright Google LLC.
+    Licensed under the Apache License, Version 2.0.
+
+  * Libmorton (Morton-order encoding) — Copyright Jeroen Baert.
+    Licensed under the MIT License.
+
+  * PyTorch (model runtime, torch.compile stack) —
+    Copyright Meta Platforms, Inc. and the PyTorch Foundation.
+    Licensed under the BSD 3-Clause License.
+
+  * OpenAI Triton (fused GPU kernels) — Copyright OpenAI.
+    Licensed under the MIT License.
+
+  * hnswlib (recall oracle, development-only, not shipped in binaries) —
+    Copyright The hnswlib Authors.
+    Licensed under the Apache License, Version 2.0.
+
+  * spdlog (logging) — Copyright Gabi Melman.
+    Licensed under the MIT License.
+
+  * GoogleTest (C++ test framework) — Copyright Google LLC.
+    Licensed under the BSD 3-Clause License.
+
+Infrastructure tooling (Ansible, Prometheus, Grafana, OpenTelemetry
+Collector) is invoked at deploy time and not distributed with Vectra
+binaries; it is therefore omitted from this NOTICE.
