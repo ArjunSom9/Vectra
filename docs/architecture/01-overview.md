@@ -47,7 +47,7 @@ Each maps to one architectural pillar, one directory, and one CI gate:
 | # | Requirement | Pillar | Verified by |
 |---|---|---|---|
 | R1 | **50,000 QPS against 10M property embeddings at sub-millisecond latency**, via a bespoke geo-distributed C++ engine with asynchronous gRPC and spatial sharding | I — `engine/` | `make bench-qps`, `make bench-recall` |
-| R2 | **≥ 40% GPU memory-bandwidth reduction and ≥ 3× inference throughput** via custom fused Triton kernels with explicitly managed global-memory access | II — `kernels/` | `make bench-bandwidth`, `make bench-gpu` |
+| R2 | **Reduce HBM traffic by 40% and triple inference throughput** via custom fused Triton kernels with explicitly managed global-memory access | II — `kernels/` | `make bench-bandwidth`, `make bench-gpu` |
 | R3 | **Zero developer-facing friction** — a custom PyTorch compiler pass that detects unoptimized spatial scoring in `torch.fx` and swaps in the Triton kernel automatically | III — `compiler/` | `make test-compiler` |
 
 The requirements are not independent: R3 exists so that R2's performance
