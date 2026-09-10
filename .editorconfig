@@ -1,0 +1,198 @@
+# ==============================================================================
+#  Vectra — Geo-Distributed Vector Search & Transformer Inference Engine
+#
+#  .editorconfig — the editor-level formatting baseline for the repository.
+#
+#  Design principles:
+#    1. LF endings, UTF-8, never BOM. The deployment target is bare-metal
+#       Linux: BOM breaks shebang lines, protobuf parsers, and YAML
+#       loaders; CRLF has no reason to exist anywhere in this tree.
+#    2. This file is the EDITOR BASELINE. The build-level AUTHORITY for
+#       each language is its CI formatter (clang-format for C++, ruff for
+#       Python). The numbers below are deliberately identical to those
+#       formatters — if one changes, both change in the same commit.
+#    3. Semantic whitespace is never destroyed: Makefile tabs, Makefile
+#       trailing spaces (they are captured into variable values!),
+#       Markdown hard line breaks, canonical legal text, and zero-byte
+#       .gitkeep scaffolds are all protected below.
+#    4. Only core EditorConfig spec properties are used — no editor-
+#       specific keys — so behavior is identical across VS Code, JetBrains
+#       IDEs, Neovim, Vim, and Emacs.
+#
+#  SECTION ORDER IS SIGNIFICANT: for a given file, the LAST matching
+#  section wins. [*] is first; special-case overrides are last.
+# ==============================================================================
+
+root = true
+
+# ------------------------------------------------------------------------------
+#  Global defaults — every file, including types without their own section
+#  (.conf, .gitignore, .env.example, and this file itself).
+# ------------------------------------------------------------------------------
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# ------------------------------------------------------------------------------
+#  C++ — engine/
+#  2 spaces / 80 columns: Google style, the native style of the upstream
+#  ecosystem the engine is built from (gRPC, Abseil, Highway, GoogleTest).
+#  Mirrors .clang-format: BasedOnStyle: Google, ColumnLimit: 80.
+# ------------------------------------------------------------------------------
+[*.{cpp,cc,cxx,hpp,hh,h}]
+indent_size = 2
+max_line_length = 80
+
+# ------------------------------------------------------------------------------
+#  Python — kernels/ compiler/ models/ serving/ data/ benchmark/ tests/
+#  4 spaces / 100 columns: mirrors ruff, line-length = 100 pinned in
+#  pyproject.toml [tool.ruff].
+# ------------------------------------------------------------------------------
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+# ------------------------------------------------------------------------------
+#  Protobuf contracts — contracts/proto/
+#  2 / 80 per the protobuf style guide.
+# ------------------------------------------------------------------------------
+[*.proto]
+indent_size = 2
+max_line_length = 80
+
+# ------------------------------------------------------------------------------
+#  CMake — engine/CMakeLists.txt, engine/cmake/*.cmake
+#  Long target and source lists are common; no forced wrapping.
+# ------------------------------------------------------------------------------
+[{CMakeLists.txt,*.cmake}]
+indent_size = 2
+max_line_length = off
+
+# ------------------------------------------------------------------------------
+#  YAML / YML — engine & serving configs, deploy/envs/, deploy/observability/
+#  (prometheus.yml, alerts.yml, otel_collector.yaml), workflows, Ansible.
+#  Both extensions appear in the tree by upstream convention. Alert
+#  expressions and image URIs get long; no forced wrapping.
+# ------------------------------------------------------------------------------
+[*.{yaml,yml}]
+indent_size = 2
+max_line_length = off
+
+# ------------------------------------------------------------------------------
+#  JSON — Grafana dashboards, regression goldens, data schemas.
+#  max_line_length = off is LOAD-BEARING: dashboards and goldens contain
+#  long single-line strings; any editor "hard wrap on save" would corrupt
+#  them and break CI golden contracts.
+# ------------------------------------------------------------------------------
+[*.json]
+indent_size = 2
+max_line_length = off
+
+# ------------------------------------------------------------------------------
+#  TOML — pyproject.toml
+# ------------------------------------------------------------------------------
+[*.toml]
+indent_size = 2
+
+# ------------------------------------------------------------------------------
+#  Shell — scripts/*.sh, deploy/baremetal/tune_latency.sh, deploy/gpu/
+#  Long docker/ssh command chains are intentionally unwrapped.
+#  shellcheck + shfmt -i 2 govern in CI.
+# ------------------------------------------------------------------------------
+[*.sh]
+indent_size = 2
+max_line_length = off
+
+# ------------------------------------------------------------------------------
+#  Dockerfiles — deploy/gpu/Dockerfile.inference
+#  4-space continuation indent, per Docker's own example conventions.
+# ------------------------------------------------------------------------------
+[Dockerfile*]
+indent_size = 4
+
+# ------------------------------------------------------------------------------
+#  Markdown — README, docs/, ADRs, runbooks
+#  trim_trailing_whitespace = false: two trailing spaces are the CommonMark
+#  hard line break; auto-trim would silently reflow rendered documentation.
+# ------------------------------------------------------------------------------
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+max_line_length = off
+
+# ------------------------------------------------------------------------------
+#  Mermaid diagram sources — docs/architecture/diagrams/sources/*.mmd
+# ------------------------------------------------------------------------------
+[*.mmd]
+indent_size = 2
+max_line_length = off
+
+
+# ==============================================================================
+#  SPECIAL-CASE OVERRIDES — must come after [*] and the language sections
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+#  Makefile — tabs are REQUIRED by POSIX make.
+#  trim_trailing_whitespace = false is SEMANTIC, not cosmetic: in
+#      VAR = value<space>
+#  the trailing space is captured into the variable's value. Auto-trim
+#  would silently change build behavior.
+# ------------------------------------------------------------------------------
+[{Makefile,GNUmakefile,*.mk}]
+indent_style = tab
+tab_width = 4
+trim_trailing_whitespace = false
+
+# ------------------------------------------------------------------------------
+#  Legal text — LICENSE, NOTICE
+#  Canonical Apache-2.0 text is width-77 pre-wrapped. Keep it byte-stable
+#  so diffs against upstream stay clean: no trimming, no reflow.
+# ------------------------------------------------------------------------------
+[{LICENSE,NOTICE}]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# ------------------------------------------------------------------------------
+#  Pinned dependency lock — one specifier per line, never wrapped.
+# ------------------------------------------------------------------------------
+[requirements-lock.txt]
+max_line_length = off
+
+# ------------------------------------------------------------------------------
+#  .gitkeep scaffolds — the directory-presence invariant requires them to
+#  stay EXACTLY zero bytes. A "helpfully" inserted final newline (1 byte)
+#  pollutes every future diff of the scaffold set.
+# ------------------------------------------------------------------------------
+[.gitkeep]
+insert_final_newline = false
+trim_trailing_whitespace = false
+
+# ------------------------------------------------------------------------------
+#  Tool-generated diagrams — *.svg exports of the Mermaid sources.
+#  Never hand-reformatted; properties unset so editors do not normalize
+#  tool output.
+# ------------------------------------------------------------------------------
+[*.svg]
+indent_size = unset
+tab_width = unset
+max_line_length = unset
+insert_final_newline = unset
+trim_trailing_whitespace = false
+
+# ------------------------------------------------------------------------------
+#  Vendored third-party source — the hnswlib recall oracle, wherever the
+#  tree vendors it. Upstream code is never reformatted; unset properties
+#  keep local diffs comparable to upstream releases.
+# ------------------------------------------------------------------------------
+[{third_party/**,**/third_party/**,**/oracle/**}]
+indent_style = unset
+indent_size = unset
+tab_width = unset
+max_line_length = unset
+insert_final_newline = unset
+trim_trailing_whitespace = false
