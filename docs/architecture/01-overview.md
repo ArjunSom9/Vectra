@@ -64,37 +64,37 @@ document's analysis, elaborated in [02](02-why-not-managed.md)).
                                            │ PredictPrice(lat, lon, …, top_k)
                                            ▼
                           ┌─────────────────────────────────┐
-                          │     INFERENCE GATEWAY            │
-                          │     serving/ (asyncio + gRPC)    │
-                          │     :7000                        │
+                          │     INFERENCE GATEWAY           │
+                          │     serving/ (asyncio + gRPC)   │
+                          │     :7000                       │
                           └────────┬───────────────┬────────┘
                  3-char GeoHash   │               │ top-k candidates
               (data-center tier) ─┘               ▼
         ┌───────────────────────────┐   ┌──────────────────────────────────┐
-        │  ROUTING LAYER             │   │   GPU INFERENCE TIER (H100 SXM5)  │
-        │  engine/client             │   │   models/ · compiler/ · kernels/  │
-        │  · 4-char prefix → shard   │   │                                   │
-        │  · 8-adjacent-cell fanout  │   │   torch.compile(                  │
-        │    (radius-intersecting    │   │     backend="custom_backend")     │
-        │    shards only)            │   │    └─ FX subgraph rewrite →       │
-        │  · pooled channels (64),   │   │       fused Triton kernel:        │
-        │    round-robin             │   │       2(Q·K) − ‖Q‖² − ‖K‖²        │
-        └──────────┬─────────────────┘   │       on Tensor Cores, all        │
-                   │ async gRPC          │       intermediates in SRAM/      │
-                   │ 1 CQ per core,      │       registers, one load and     │
-                   │ thread-per-core,    │       one store per invocation    │
-                   │ CallData tags       │                                   │
-        ┌──────────▼─────────────────┐   │   Price prediction out            │
-        │  BARE-METAL C++ SHARDS     │   └──────────────────────────────────┘
-        │  engine/src                 │
-        │  · HNSW, flat contiguous    │
-        │    arena, integer offsets   │
-        │  · PQ-compressed embeddings │
-        │    (64 B/vector)            │
-        │  · AVX-512 SIMD distances   │
-        │  · 5-char GeoHash prefilter │
-        │  · 10M vectors, ~2.1 GB,    │
-        │    mlock'd, zero disk spill │
+        │  ROUTING LAYER            │   │   GPU INFERENCE TIER (H100 SXM5) │
+        │  engine/client            │   │   models/ · compiler/ · kernels/ │
+        │  · 4-char prefix → shard  │   │                                  │
+        │  · 8-adjacent-cell fanout │   │   torch.compile(                 │
+        │    (radius-intersecting   │   │     backend="custom_backend")    │
+        │    shards only)           │   │    └─ FX subgraph rewrite →      │
+        │  · pooled channels (64),  │   │       fused Triton kernel:       │
+        │    round-robin            │   │       2(Q·K) − ‖Q‖² − ‖K‖²       │
+        └──────────┬────────────────┘   │       on Tensor Cores, all       │
+                   │ async gRPC         │       intermediates in SRAM/     │
+                   │ 1 CQ per core,     │       registers, one load and    │
+                   │ thread-per-core,   │       one store per invocation   │
+                   │ CallData tags      │                                  │
+        ┌──────────▼─────────────────┐  │   Price prediction out           │
+        │  BARE-METAL C++ SHARDS     │  └──────────────────────────────────┘
+        │  engine/src                │
+        │ · HNSW, flat contiguous    │
+        │   arena, integer offsets   │
+        │ · PQ-compressed embeddings │
+        │   (64 B/vector)            │
+        │ · AVX-512 SIMD distances   │
+        │ · 5-char GeoHash prefilter │
+        │ · 10M vectors, ~2.1 GB,    │
+        │   mlock'd, zero disk spill │
         └────────────────────────────┘
 ```
 
