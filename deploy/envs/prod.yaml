@@ -1,0 +1,29 @@
+# Ansible inventory for production: three macro-regions, N+1 nodes each
+# (design Section 11), single-socket EPYC engine nodes and H100 SXM5 inference
+# hosts. Replica endpoints must match engine/configs/shard_map.textproto.
+all:
+  vars:
+    ansible_user: deploy
+    housekeeping_cores: "0-3"
+    numa_node: 0
+    nic: enp65s0f0np0
+    worker_cores: "4-95"
+  children:
+    engine:
+      children:
+        dc_west:
+          hosts:
+            west-1.vectra.internal: {shard_id: 1, shard_port: 7101}
+            west-2.vectra.internal: {shard_id: 1, shard_port: 7101}
+        dc_central:
+          hosts:
+            central-1.vectra.internal: {shard_id: 2, shard_port: 7102}
+            central-2.vectra.internal: {shard_id: 2, shard_port: 7102}
+        dc_east:
+          hosts:
+            east-1.vectra.internal: {shard_id: 3, shard_port: 7103}
+            east-2.vectra.internal: {shard_id: 3, shard_port: 7103}
+    inference:
+      hosts:
+        gpu-1.vectra.internal: {gpu: h100-sxm5}
+        gpu-2.vectra.internal: {gpu: h100-sxm5}

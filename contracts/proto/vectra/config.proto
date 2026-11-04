@@ -1,0 +1,115 @@
+// Copyright 2025 Texas A&M University
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Typed schema for engine/configs/*.textproto. The C++ engine and the Python
+// gateway parse the same files, so routing cannot drift between them.
+
+syntax = "proto3";
+
+package vectra.config.v1;
+
+// engine/configs/hnsw_params.textproto
+message IndexParams {
+  // Embedding dimension of the corpus.
+  uint32 dimension = 1;
+  // HNSW M: links created per insertion and the upper-layer degree cap [21].
+  uint32 m = 2;
+  // Layer-0 degree cap; [21] recommends 2 * m.
+  uint32 m0 = 3;
+  uint32 ef_construction = 4;
+  // Default beam width at query time (the recall/latency dial).
+  uint32 ef_search = 5;
+  // Number of PQ-ranked candidates re-scored with exact FP32 distances.
+  uint32 rerank_depth = 6;
+  // Capacity reserved per shard (vectors).
+  uint64 max_elements = 7;
+  // PQ sub-quantizers; also the code size in bytes (8-bit codes [22]).
+  uint32 pq_subspaces = 8;
+  uint32 pq_training_samples = 9;
+  uint32 pq_kmeans_iterations = 10;
+  // Prefilter populations at or below this size are scanned exhaustively.
+  uint32 exhaustive_scan_threshold = 11;
+  uint32 build_threads = 12;
+  uint64 seed = 13;
+}
+
+// engine/configs/geohash_policy.textproto
+message GeohashPolicy {
+  // Macro-region / data-center selection (~156 km cells).
+  uint32 macro_region_chars = 1;
+  // Primary shard key (~39.1 x 19.5 km cells).
+  uint32 shard_chars = 2;
+  // In-node inverted prefilter (~4.9 x 4.9 km cells).
+  uint32 prefilter_chars = 3;
+  // Micro-neighborhood bound for pricing features (~1.2 x 0.6 km cells).
+  uint32 microhood_chars = 4;
+  double default_radius_km = 5;
+  // Static cap on the request radius; the router additionally rejects any
+  // radius that would leave the 3x3 block of shard cells.
+  double max_radius_km = 6;
+}
+
+// engine/configs/shard_map.textproto
+message ShardMap {
+  repeated ShardEndpoint shards = 1;
+  // Longest prefix wins. Prefixes are 1..shard_chars GeoHash characters.
+  repeated PrefixAssignment assignments = 2;
+}
+
+message ShardEndpoint {
+  uint32 id = 1;
+  string macro_region = 2;
+  // host:port of every replica serving the shard.
+  repeated string endpoints = 3;
+}
+
+message PrefixAssignment {
+  string prefix = 1;
+  uint32 shard_id = 2;
+}
+
+// engine/configs/cluster_topology.textproto
+message ClusterTopology {
+  repeated MacroRegion regions = 1;
+  ServerOptions server = 2;
+  ClientOptions client = 3;
+}
+
+message MacroRegion {
+  string name = 1;
+  string datacenter = 2;
+  // GeoHash prefixes of 1..macro_region_chars characters.
+  repeated string prefixes = 3;
+}
+
+message ServerOptions {
+  // Linux cpulist syntax, for example "4-95". Empty runs unpinned workers on
+  // every hardware thread.
+  string worker_cores = 1;
+  // Threads polling each completion queue. The design pins one per core;
+  // gRPC's performance guide reports two as the best trade-off [27], so the
+  // ratio is benchmarked rather than assumed.
+  uint32 threads_per_queue = 2;
+  // Requests pre-registered per method per completion queue [27].
+  uint32 requests_per_queue = 3;
+  bool lock_memory = 4;
+  uint32 max_receive_message_bytes = 5;
+}
+
+message ClientOptions {
+  // Pre-warmed channels per shard endpoint, selected round-robin.
+  uint32 channel_pool_size = 1;
+  uint32 timeout_ms = 2;
+  uint32 keepalive_time_ms = 3;
+}

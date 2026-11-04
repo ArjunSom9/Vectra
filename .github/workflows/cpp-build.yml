@@ -1,0 +1,99 @@
+# Engine: style, the dependency-free core under three sanitizer settings,
+# and the full server build (gRPC 1.71.0) with its integration tests.
+name: cpp-build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "engine/**"
+      - "contracts/**"
+      - ".clang-format"
+      - "CPPLINT.cfg"
+      - ".github/workflows/cpp-build.yml"
+
+permissions:
+  contents: read
+
+env:
+  CC: gcc-14
+  CXX: g++-14
+
+jobs:
+  style:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install clang-format==19.1.7 cpplint==2.0.2
+      - name: clang-format (Google style)
+        run: >
+          find engine contracts \( -name '*.cc' -o -name '*.h' -o -name '*.proto' \)
+          -print0 | xargs -0 clang-format --dry-run --Werror
+      - name: cpplint
+        run: >
+          find engine \( -name '*.cc' -o -name '*.h' \) -print0
+          | xargs -0 cpplint --quiet
+
+  core:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitize: ["", "address,undefined", "thread"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14
+          pip install cmake==3.31.6 ninja==1.11.1.4
+      - name: Configure
+        run: >
+          cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DVECTRA_BUILD_SERVER=OFF -DVECTRA_BUILD_TESTS=ON
+          -DVECTRA_ARCH=x86-64-v3 -DVECTRA_SANITIZE=${{ matrix.sanitize }}
+      - run: cmake --build build -j "$(nproc)"
+      - run: ctest --test-dir build --output-on-failure -j "$(nproc)"
+
+  server:
+    runs-on: ubuntu-24.04
+    env:
+      GRPC_PREFIX: /opt/vectra/grpc-1.71.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache gRPC
+        id: grpc
+        uses: actions/cache@v4
+        with:
+          path: /opt/vectra/grpc-1.71.0
+          key: grpc-1.71.0-gcc14-ubuntu24.04
+      - name: Toolchain and Python environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14
+          scripts/bootstrap.sh --python
+      - name: Build gRPC 1.71.0
+        if: steps.grpc.outputs.cache-hit != 'true'
+        run: scripts/bootstrap.sh --grpc
+      - name: Build the engine
+        run: make build-engine VECTRA_ARCH=x86-64-v3 PYTHON=.venv/bin/python
+      - run: ctest --test-dir build/engine --output-on-failure -j "$(nproc)"
+      - name: Full stack against the real engine
+        run: make test-e2e PYTHON=.venv/bin/python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-binaries
+          path: |
+            build/engine/vectra_shard
+            build/engine/apps/indexer/indexer
+            build/engine/apps/stress_client/stress_client
+            build/engine/apps/shard_inspector/shard_inspector

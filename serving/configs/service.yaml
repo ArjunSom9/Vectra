@@ -1,0 +1,18 @@
+# Inference gateway (serving/service.py; schema: serving.service.ServiceConfig).
+listen: "[::]:7000"
+metrics_port: 9464            # Prometheus scrape port; 0 disables.
+
+engine:
+  # Routing, shard endpoints and client options (channel_pool_size 64,
+  # timeout_ms 5, keepalive_time_ms 10000) come from the engine's own
+  # configuration, so gateway and engine always agree on shard ownership.
+  config_dir: engine/configs
+  connect_timeout_s: 10       # Pre-warm every pooled channel at start-up.
+
+model:
+  compiled: true              # false serves the eager checkpoint (debug only).
+  bundle_dir: dist/compiled_model    # models/export/compile_entry.py output.
+  checkpoint_dir: checkpoints/price_transformer_v1
+  device: cuda
+  batch_window_ms: 2          # Dynamic batching window.
+  max_batch_size: 64          # Eager only; a bundle fixes its batch size.

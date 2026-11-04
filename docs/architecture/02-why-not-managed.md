@@ -2,16 +2,16 @@
 
 | | |
 |---|---|
-| **Status** | Accepted — Frozen Spec (Phase 0) |
-| **Version** | 1.0.0 |
-| **Synthesizes** | Design document §2 (The Limitations of Managed Backend Services) |
+| **Status** | Accepted (v1.1, corrected against the implementation) |
+| **Synthesizes** | Design document §3.1 (why managed backend services cannot meet the retrieval target) |
 | **Companion decision** | [ADR-001 — Async gRPC bespoke engine over managed backend](../decisions/adr-001-async-grpc-over-managed-db.md) |
 | **Implements the refutation** | [03](03-async-grpc.md) · [04](04-geohash-sharding.md) · [05](05-hnsw-flat-memory.md) |
 | **Refuted-by condition** | Any managed offering passing the gates of [`benchmark/qps_latency/`](../../benchmark/qps_latency/) — see §10 |
 | **Change control** | ADR-backed PRs only |
 
-> **Verdict.** No managed vector backend satisfies R1 — 50,000 QPS over 10M
-> property embeddings at sub-millisecond p99 — and none *can*, by
+> **Verdict.** No managed vector backend satisfies O1 — 50,000 QPS over 10M
+> property embeddings at sub-millisecond p50, with a tail that must stay
+> bounded under fan-out — and none *can*, by
 > architecture: the managed read path is straggler-bound (§3),
 > page-cache-dependent (§4), and pause-prone (§5). The requirement does not
 > merely favor a bespoke engine; it **specifies** one. Recorded as ADR-001.
@@ -20,19 +20,23 @@
 throughout:
 
 - **[ANALYTICAL]** — exact mathematics or class-level reasoning about managed
-  architectures, grounded in the literature ([1], [2], [3]; annotated
+  architectures, grounded in the literature ([1], [7], [11], [12], [13]; annotated
   entries in [`docs/research/bibliography.md`](../research/bibliography.md)).
   Deliberately *not* per-vendor benchmarks: the argument is structural.
-- **[MEASURED]** — properties of Vectra itself, every one reproducible via a
-  `make bench-*` target and enforced by the regression goldens.
+- **[TESTED]** — properties of Vectra checked by a test in this repository
+  (named next to the claim).
+- **[TARGET]** — Vectra acceptance numbers that need the reference hardware.
+  They become results only when their `make bench-*` report is recorded in
+  `tests/regression/`.
 
 ---
 
 ## 1. The Decision Under Test
 
-Requirement R1 from [01-overview](01-overview.md) §2:
+Objective O1 from [01-overview](01-overview.md) §2:
 
-> **50,000 QPS against 10M property embeddings at sub-millisecond latency.**
+> **50,000 QPS against 10M property embeddings at sub-millisecond p50
+> latency, with recall@10 ≥ 0.95.**
 
 Any candidate backend — managed or bespoke — must answer three questions
 before benchmarks are even run:
@@ -43,24 +47,25 @@ before benchmarks are even run:
 | Q2 | Is the index **guaranteed RAM-resident with no page-fault path**? | A single disk fault consumes ~10% of the entire budget (§4) |
 | Q3 | Is the read path **free of stop-the-world events and per-request allocation cascades**? | At 50K QPS the pause budget is effectively zero (§5) |
 
-Managed offerings fail all three **by architecture, not by tuning** — a
-consequence of what they are built to guarantee. As the design document
-states: managed backends rely on *"generalized sharding mechanisms and
-consensus protocols designed for high durability across diverse workloads
-rather than hyper-optimized read performance"* (§2). The read path pays
-rent for machinery it never uses.
+Managed offerings fail all three **by architecture, not by tuning**, as a
+consequence of what they are built to guarantee. In the design document's
+words (§3.1), generalized vector database systems "are designed to serve
+many workloads acceptably rather than one workload optimally" [1] [11]. The
+read path pays rent for machinery it never uses.
 
 ---
 
 ## 2. The Budget Arithmetic — Why Sub-Millisecond Is a Different Regime
 
-A p99 of 1 ms is **1,000 µs, network-inclusive, end to end**. At 50,000 QPS,
+The objective is stated at p50. This section works the stricter p99 case,
+because the tail is what fan-out and pauses amplify, and a p50 bound is only
+credible if the tail is under control. A p99 of 1 ms is **1,000 µs, network-inclusive, end to end**. At 50,000 QPS,
 one millisecond of wall time contains **50 requests in flight**. That single
 ratio converts every event in the system into a request count:
 
 | Event | Duration | Requests affected | Share of the p99 budget |
 |---|---|---|---|
-| Intra-DC gRPC hop (measured, step 3 of the [§5 ledger in 01](01-overview.md)) | 52 µs | 2.6 | 5% |
+| Intra-DC gRPC hop (budgeted, [`latency-budget.md`](../research/latency-budget.md)) | ~50 µs | 2.5 | 5% |
 | **One NVMe page fault** | ~100 µs+ | 5 | **10%+** |
 | One 10 ms managed-runtime pause | 10 ms | 500 | 1,000% |
 | One 40 ms compaction/GC pause | 40 ms | 2,000 | 4,000% |
@@ -82,10 +87,10 @@ deterministic memory management can.
 
 In traditional sharded ANN systems, a query is **broadcast to all
 partitions**; the coordinating node awaits every shard, deserializes the
-results, performs a global merge-sort, and responds ([1], [3]). The design
-document's citation of the phenomenon is exact: *"the latency of any single
-query is strictly bound by the slowest responding shard in the cluster"*
-(§2, citing [3]).
+results, performs a global merge-sort, and responds ([1], [11]). The design
+document states the consequence (§3.1): "In any fan-out design the latency
+of one user request is bounded by the slowest of the shards it touches"
+[13].
 
 **[ANALYTICAL] Why spatial workloads are the worst case.** Managed engines
 shard by vector ID or hash — sharding that is agnostic to query semantics.
@@ -123,17 +128,21 @@ merge (§5) on top. Geo-distribution closes the case categorically: a
 cross-DC round trip is 10–70 ms of physics — a "geo-distributed" managed
 read is double-digit milliseconds before any indexing begins.
 
-### The refutation [MEASURED]
+### The refutation [TESTED routing, TARGET latency]
 
-Vectra routes by **4-character GeoHash prefix to exactly one shard** — a
-deterministic routing-table lookup ([04](04-geohash-sharding.md)). Only when
-the search radius crosses a cell boundary is the query duplicated, and only
-to the shards governing **intersecting** adjacent cells: median 1 shard per
-query, boundary cases 2–3, never broadcast. The single-shard common case is
-pass-through — there is no merge step ([01](01-overview.md) §5).
+Vectra shards by **4-character GeoHash cell** and routes each query only to
+the owners of the cells its search disk touches
+([04](04-geohash-sharding.md)). The disk is bounded to the 3×3 block of
+cells around the query's home cell, so a query reaches at most the owners of
+nine cells, never the whole fleet. Shard boundaries follow GeoHash prefix
+boundaries, so most queries reach a single shard. A query near a boundary
+reaches the two or three shards on either side, and their results are
+merged by distance. Exact mode finds every comparable on both sides of a
+boundary (`engine/tests/boundary/`, recall 1.0).
 
-Verified: **p99 = 0.47 ms at 51,240 QPS** (`make bench-qps`; golden-gated).
-Owning code: `engine/src/routing/`, `engine/client/geo_router.cpp`.
+The latency consequence, p50 < 1 ms at 50,000 QPS, is a target measured by
+`make bench-qps`. Owning code: `engine/src/routing/`,
+`engine/client/geo_router.cc`, `serving/retrieve.py`.
 
 ---
 
@@ -141,11 +150,10 @@ Owning code: `engine/src/routing/`, `engine/client/geo_router.cpp`.
 
 ### The managed failure mechanism [ANALYTICAL]
 
-The design document, citing [3]: when indexing mechanisms spill to disk
-under inadequate memory optimization, *"graph traversal transitions from a
-CPU-bound operation to an I/O-bound operation, causing performance to
-degrade non-linearly as concurrency increases."* The mechanism, made
-precise:
+The design document (§3.1, citing [7] and [12]): "When an index cannot
+remain memory-resident, traversal degenerates from a CPU-bound to an
+I/O-bound operation, and performance falls non-linearly as concurrency
+rises." The mechanism, made precise:
 
 1. Managed indexes are commonly **mmap'd files** whose residency depends on
    the OS page cache — a best-effort guarantee, not an invariant.
@@ -160,33 +168,33 @@ a single fault**, against a traversal that touches hundreds of nodes. Two
 or three cold-node faults and the budget is gone before the GPU tier is
 even reached.
 
-### The footprint that invites the problem [ANALYTICAL, class-level]
+### The footprint [ANALYTICAL, from the data structures]
 
-Same corpus, 10M × 64-dim. Managed-class figures are typical published
-footprints for full-precision, pointer-based indexes — not a specific
-vendor's numbers:
+The 10M × 128-dimensional corpus, at Vectra's configured parameters
+([01 §8](01-overview.md)):
 
-| Component | Vectra (flat + PQ) | Managed-class typical |
+| Component | Vectra (bytes per vector) | 10M vectors |
 |---|---|---|
-| Vector storage | 640 MB (64 B PQ codes/vector) | 2.56 GB (FP32) |
-| HNSW adjacency | 640 MB (`m = 16`, 4-byte offsets) | ~2–4 GB (8-byte pointers, per-node object overhead, higher `m` defaults) |
-| L2 norms | 40 MB | 40 MB |
-| Metadata, filter indexes | ~600 MB | 1–2 GB |
-| **Total** | **~2.1 GB** | **~6–10 GB** |
+| Float32 vectors for the exact re-rank, plus norms | 516 | 5.2 GB |
+| Layer-0 graph: 16-byte PQ code and 32 neighbor offsets | 160 | 1.6 GB |
+| Upper graph layers | ~5 | 50 MB |
+| Property columns and the GeoHash prefilter | 104 | 1.0 GB |
+| **Total** | **~785** | **~7.9 GB, ~2.6 GB per shard** |
 
-Both fit a large node — capacity is not the argument. **Residency
-discipline is**: a 4–5× larger working set, mmap'd, sharing memory with the
-runtime that must serve it, is a page-fault generator under load.
+Capacity is not the argument; every shard fits a large node with two orders
+of magnitude to spare. **Residency discipline is.** A managed index that is
+mmap'd and shares memory with the runtime serving it is a page-fault
+generator under load.
 
-### The refutation [MEASURED / STRUCTURAL]
+### The refutation [STRUCTURAL; residency TESTED by the health report]
 
-Vectra's index is **one contiguous, pre-faulted, `mlock`'d arena** with
-integer offsets instead of pointers (`engine/src/memory/arena.cpp`,
-`ram_lock.cpp`; derivation in [05](05-hnsw-flat-memory.md)). PQ compression
-holds the working set at ~2.1 GB. The page-fault path is not mitigated —
-it is **architecturally unreachable**. Residency is an invariant, enforced
-operationally: 10M vectors resident in ~2.1 GB with zero spill, verified by
-`engine/apps/shard_inspector` and the RAM-lock policy.
+Vectra's index lives in flat, offset-addressed structures (64-byte-aligned
+buffers, column vectors; no per-node heap objects) that the shard locks in
+RAM at start-up with `mlockall` (`engine/src/memory/ram_lock.cc`;
+derivation in [05](05-hnsw-flat-memory.md)). The page-fault path is not
+mitigated but removed. A shard whose memory is not locked says so in its
+health report (`MemoryStats.locked`), and the `IndexNotLocked` alert fires
+(`deploy/observability/alerts.yml`).
 
 ---
 
@@ -205,13 +213,14 @@ which drain at rate (μ − λ):
 | 40 ms | 2,000 | 160 ms | ~200 ms |
 | 100 ms | 5,000 | 400 ms | ~500 ms |
 
-At 80% utilization, a pause costs **~5× its duration** in tail. Note the
-reconciliation with the design document's own claim ("a transient
-millisecond-level pause can queue thousands of requests"): a 1 ms pause
-queues 50; the pauses that actually occur in managed runtimes — young-gen
-collections, compaction, rebalancing — are the 10–100 ms regime, queueing
-500–5,000. Either way, against the §2 tolerance math the pause budget is
-zero.
+At 80% utilization, a pause costs **~5× its duration** in tail. The design
+document makes the same point qualitatively (§3.1): "even rare
+millisecond-level stalls — garbage-collection pauses in managed runtimes,
+compaction, connection re-establishment — dominate the percentile profile
+at 50,000 requests per second." The pauses that actually occur in managed
+runtimes (young-generation collections, compaction, rebalancing) are in the
+10–100 ms regime and queue 500–5,000 requests. Either way, against the §2
+tolerance math the pause budget is zero.
 
 ### The feedback loop
 
@@ -227,21 +236,21 @@ estimates.]
 Vector-capable relational databases add the write path's rent to every
 read: connection setup/auth, MVCC snapshot acquisition, WAL-ordered
 visibility, planner, executor, extension scan, result encoding — each
-10–100 µs of layers the query never needed ([2]). Durable, transactional,
+10–100 µs of layers the query never needed ([1]). Durable, transactional,
 general — and structurally unable to spend the whole budget on the lookup
 itself.
 
-### The refutation [MEASURED]
+### The refutation [STRUCTURAL; tail latency TARGET]
 
 Vectra's read path is **C++20 with deterministic memory management**: the
 `CallData` state machine with address tags, one `CompletionQueue` per
-physical core, thread-per-core with zero scheduler yields, and **one
-serialization boundary** ([03](03-async-grpc.md), the pattern documented in
-[10]). No GC exists to pause; hot-path allocation is prohibited by
-contribution policy and reviewed as such
-([`CONTRIBUTING.md`](../../CONTRIBUTING.md) — "No allocation on the request
-hot path"). Verified: p99.9 = 0.71 ms across a 60-minute soak at 51,240 QPS
-(`make bench-qps`).
+worker core, pinned workers that never yield to another runnable thread,
+and **one serialization boundary** ([03](03-async-grpc.md), the pattern of
+the gRPC asynchronous tutorial [19]). No garbage collector exists to pause.
+Calls are pre-registered and recycled, and any allocation after start-up is
+counted and exported (`WorkerStats.call_pool_allocations`, alert
+`CallPoolAllocating`). The tail under a 30-minute soak at 50,000 QPS is
+measured by `make bench-qps`.
 
 ---
 
@@ -255,7 +264,7 @@ hot path"). Verified: p99.9 = 0.71 ms across a 60-minute soak at 51,240 QPS
 
 A fourth, quieter failure applies to all three classes: **contract
 control** [ANALYTICAL]. R1 is not only QPS and latency — it is SLO-grade
-telemetry (`vectra_health` shard ownership, per-stage µs histograms),
+telemetry (`HealthService.Report` shard ownership, per-stage µs histograms),
 deterministic routing semantics, and versioned error contracts
 ([`contracts/proto/`](../../contracts/proto/)). Proprietary managed APIs
 cannot express these; an adapter layer to translate them becomes part of
@@ -279,8 +288,8 @@ has a gate:
 
 | Failure mode | Mandate | Owning document | Owning code | CI gate |
 |---|---|---|---|---|
-| A — fan-out | O(1)-in-shards routing; adjacency-only duplication; 100% boundary recall | [04](04-geohash-sharding.md) | `engine/src/routing/` | `engine/tests/boundary/`, `make bench-recall` |
-| B — spill | RAM-residency as an invariant: flat arena + PQ + `mlock` | [05](05-hnsw-flat-memory.md) | `engine/src/{index,memory}/` | `shard_inspector`, soak gates |
+| A — fan-out | Bounded fan-out (owners of at most 9 cells); 100% boundary recall in exact mode | [04](04-geohash-sharding.md) | `engine/src/routing/` | `engine/tests/boundary/`, `make bench-recall` |
+| B — spill | RAM residency as an invariant: flat structures + `mlockall` | [05](05-hnsw-flat-memory.md) | `engine/src/{index,memory}/` | health report, `IndexNotLocked` alert |
 | C — nondeterminism | Systems language; no GC; CQ-per-core; one serialization boundary | [03](03-async-grpc.md) | `engine/src/server/` | `make bench-qps` |
 | Budget (§2) | Microsecond ledger maintained per stage | [`latency-budget.md`](../research/latency-budget.md) | `serving/` | `golden_latency.json` |
 | Contract control | First-party proto; health/ownership telemetry | [`docs/api/`](../api/) | `contracts/proto/` | `make proto` + API tests |
@@ -297,7 +306,7 @@ actually means:
 | Durability & backup | Vendor-managed snapshots | **Corpus-as-source-of-truth**: index is a deterministic, parallel-per-shard rebuild from checksum-pinned data | [`data/pipelines/`](../../data/pipelines/), [`runbooks/index-rebuild.md`](../runbooks/index-rebuild.md) |
 | Elastic scaling | Autoscaling | Fixed topology; config-driven re-partitioning with human oversight | [`runbooks/resharding.md`](../runbooks/resharding.md) |
 | Upgrades & patching | One-click | Pinned, ADR-gated version pairing (PyTorch↔Triton↔CUDA, gRPC↔protobuf) | `requirements-lock.txt`, [`decisions/`](../decisions/) |
-| Observability | Vendor dashboards | First-class OTel + Prometheus, including shard-ownership telemetry a vendor cannot expose | [`deploy/observability/`](../../deploy/observability/) |
+| Observability | Vendor dashboards | Prometheus metrics from the gateway and the shard exporter, including shard-ownership telemetry a vendor cannot expose | [`deploy/observability/`](../../deploy/observability/) |
 | Ops staffing | Vendor absorbs it | **We own three runbooks and the on-call** | [`docs/runbooks/`](../runbooks/) |
 
 Why the trade is acceptable *for this workload*: the traffic is
@@ -327,18 +336,17 @@ superseding 001 — when any of these holds:
 
 | Claim | Status | Verification |
 |---|---|---|
-| Managed read-path structure (broadcast → await-all → merge) | Literature [1], [3] | [`bibliography.md`](../research/bibliography.md) |
+| Managed read-path structure (scatter → await-all → merge) | Literature [1], [11], [13] | [`bibliography.md`](../research/bibliography.md) |
 | max-of-N identity and quantile table | **Exact mathematics** | §3, derivable |
 | Managed-runtime pause profile (10–100 ms regime) | Literature + industry baseline | §5 |
 | Page-fault cost ~100 µs+ vs. budget | Arithmetic + device baselines | §4 |
-| Vectra p99 = 0.47 ms @ 51,240 QPS (60-min soak) | **[MEASURED]** | `make bench-qps`, `golden_latency.json` |
-| Vectra boundary recall = 100% | **[MEASURED]** | `engine/tests/boundary/` |
-| Vectra residency: 10M in ~2.1 GB, zero spill | **[MEASURED]** | `shard_inspector`, soak gates |
-| Working-set composition | **[MEASURED]** + derivation in [05](05-hnsw-flat-memory.md) | [01](01-overview.md) §8 |
+| Vectra p50 < 1 ms @ 50,000 QPS (30-min soak) | **[TARGET]** | `make bench-qps`, `golden_latency.json` |
+| Vectra boundary recall = 100% (exact mode) | **[TESTED]** | `engine/tests/boundary/` |
+| Vectra residency: ~785 B per vector, locked | **[ANALYTICAL]** from the data structures; lock state **[TESTED]** via the health report | [01](01-overview.md) §8 |
 
 **The falsifiability contract.** The harnesses in
 [`benchmark/`](../../benchmark/) speak the gRPC contract; any backend that
-implements `contracts/proto/vectra_search.proto` can be pointed at
+implements `contracts/proto/vectra/search.proto` can be pointed at
 `run_soak.py` and held to the identical gates. If a managed offering — via
 adapter or native — passes, this document is revised and ADR-001 is
 superseded. **The verdict is one soak away from being wrong, by design.**
@@ -351,14 +359,11 @@ superseded. **The verdict is one soak away from being wrong, by design.**
 - [05 — HNSW Flat Memory](05-hnsw-flat-memory.md) — the B-dictum refutation, in depth
 - [ADR-001](../decisions/adr-001-async-grpc-over-managed-db.md) — the recorded decision
 - [`docs/research/latency-budget.md`](../research/latency-budget.md) — the maintained µs ledger
-- [`docs/research/bibliography.md`](../research/bibliography.md) — annotated sources [1], [2], [3], [10]
+- [`docs/research/bibliography.md`](../research/bibliography.md) — annotated sources [1], [7], [11], [12], [13], [19], [27]
 - Runbooks: [`index-rebuild`](../runbooks/index-rebuild.md) · [`node-bringup`](../runbooks/node-bringup.md) · [`resharding`](../runbooks/resharding.md) · [`incident-latency`](../runbooks/incident-latency.md)
 
 ---
 
-*Change control: this document is part of the Phase 0 frozen specification.
-Substantive changes require an ADR in the same PR. Performance figures move
-only through benchmark PRs that update the regression goldens and
-[`latency-budget.md`](../research/latency-budget.md). Analytical claims
-about managed systems move only with new citations; measured claims about
-Vectra move only with new harness output.*
+*Change control: substantive changes require an ADR in the same PR.
+Analytical claims about managed systems move only with new citations; a
+target becomes a measured claim only with a recorded harness report.*

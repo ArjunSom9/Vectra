@@ -1,0 +1,52 @@
+# Kernel, compiler, model and serving suites. On GitHub-hosted runners the
+# Triton kernel runs under the Triton interpreter (TRITON_INTERPRET=1); the
+# GPU job runs everything, including the Triton kernel itself and the
+# throughput gate, on the self-hosted H100 runner when it is enabled.
+name: kernel-correctness
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "kernels/**"
+      - "compiler/**"
+      - "models/**"
+      - "serving/**"
+      - "data/**"
+      - "tests/**"
+      - "benchmark/**"
+      - "contracts/**"
+      - "pyproject.toml"
+      - "requirements-lock.txt"
+      - ".github/workflows/kernel-correctness.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  cpu:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: scripts/bootstrap.sh --python
+      - name: Every Python suite
+        run: .venv/bin/python -m pytest -q
+      - name: Kernel parity under the Triton interpreter
+        env:
+          TRITON_INTERPRET: "1"
+        run: .venv/bin/python -m pytest kernels -q
+
+  gpu:
+    if: vars.GPU_RUNNER_ENABLED == 'true'
+    runs-on: [self-hosted, linux, x64, gpu, h100]
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/bootstrap.sh --python
+      - name: Every Python suite on the GPU
+        run: .venv/bin/python -m pytest -q
+      - name: Kernel timing (numerics checked first)
+        run: .venv/bin/python -m kernels.benchmarks.throughput --batches=64,1024

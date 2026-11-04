@@ -1,0 +1,20 @@
+# proto-file: contracts/proto/vectra/config.proto
+# proto-message: vectra.config.v1.GeohashPolicy
+#
+# The spatial partitioning contract. Cell sizes at the equator [17] [18];
+# widths shrink with cos(latitude).
+
+# ~156 km x 156 km: macro-region / data-center selection.
+macro_region_chars: 3
+# ~39.1 km x 19.5 km: primary shard key, one node per cell.
+shard_chars: 4
+# ~4.9 km x 4.9 km: in-node inverted prefilter.
+prefilter_chars: 5
+# ~1.2 km x 0.6 km: micro-neighborhood bound for pricing features.
+microhood_chars: 6
+
+default_radius_km: 5.0
+# Static cap. The router also rejects any radius that would reach past the
+# eight cells adjacent to the query's cell (19.5 km tall at precision 4), so
+# fan-out never exceeds nine cells.
+max_radius_km: 15.0

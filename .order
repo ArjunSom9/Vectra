@@ -4,6 +4,7 @@ NOTICE
 Makefile
 pyproject.toml
 requirements-lock.txt
+requirements-runtime-lock.txt
 .gitignore
 .editorconfig
 CONTRIBUTING.md

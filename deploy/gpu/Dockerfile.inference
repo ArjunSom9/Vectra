@@ -1,0 +1,49 @@
+# Inference gateway image for H100 hosts.
+#
+#   docker build -f deploy/gpu/Dockerfile.inference -t vectra-inference:1.0.0 .
+#   docker run --gpus all -p 7000:7000 -p 9464:9464 \
+#     -v /srv/vectra/dist/compiled_model:/srv/vectra/dist/compiled_model:ro \
+#     vectra-inference:1.0.0
+#
+# PyTorch 2.7.0's wheels carry their CUDA 12.6 user-space libraries
+# (requirements-lock.txt pins every nvidia-* wheel), so the base image only
+# needs the CUDA 12.6 driver interface; the host driver comes from the
+# NVIDIA container toolkit (deploy/gpu/driver_matrix.md). Triton compiles a
+# small C launcher for each kernel at run time, hence the C toolchain and
+# Python headers. Export bundles in this same image so their recorded
+# toolchain matches the one that recompiles them at start-up.
+FROM nvidia/cuda:12.6.3-base-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/vectra/.venv/bin:/root/.local/bin:$PATH \
+    PYTHONPATH=/opt/vectra:/opt/vectra/kernels:/opt/vectra/compiler:/opt/vectra/build/gen/python
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.12 python3.12-venv python3.12-dev python3-pip \
+        build-essential ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3.12 -m pip install --break-system-packages --no-cache-dir \
+        uv==0.7.8
+
+WORKDIR /opt/vectra
+COPY pyproject.toml requirements-runtime-lock.txt README.md ./
+RUN uv venv --python 3.12 .venv \
+    && uv pip sync --python .venv/bin/python \
+        --exclude-newer 2025-05-30T23:59:59Z requirements-runtime-lock.txt
+
+COPY contracts contracts
+COPY scripts/gen_proto.sh scripts/gen_proto.sh
+COPY data data
+COPY kernels kernels
+COPY compiler compiler
+COPY models models
+COPY serving serving
+COPY engine/configs engine/configs
+RUN PYTHON=.venv/bin/python scripts/gen_proto.sh \
+    && uv pip install --python .venv/bin/python --no-deps -e .
+
+EXPOSE 7000 9464
+ENTRYPOINT ["python", "-m", "serving.service", "--config=serving/configs/service.yaml"]

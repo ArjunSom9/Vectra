@@ -1,0 +1,97 @@
+# Copyright 2025 Texas A&M University
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Every pin below was released on or before 2025-05-30, the close of the
+# project window; requirements-lock.txt freezes the full transitive closure
+# with `uv pip compile --exclude-newer 2025-05-30T23:59:59Z`.
+
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vectra"
+version = "1.0.0"
+description = "Geo-distributed vector search and Transformer inference for real-time property pricing."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12,<3.13"
+authors = [{ name = "Arjun Som" }]
+dependencies = [
+  # PyTorch 2.7.0 (2025-04-23) pins triton==3.3.0 on Linux x86-64 and ships
+  # CUDA 12.6 runtime wheels; never install the unrelated `torchtriton`.
+  "torch==2.7.0",
+  "numpy==2.2.6",
+  "pyyaml==6.0.2",
+  # gRPC 1.71.0 (2025-03-06) on both sides: the C++ build vendors protobuf
+  # 29.0, and grpcio-tools 1.71.0 emits code for the 5.29.x Python runtime.
+  # (grpcio 1.72.0 was yanked from PyPI; 1.72.1 is from June 2025.)
+  "grpcio==1.71.0",
+  "protobuf==5.29.5",
+  "safetensors==0.5.3",
+  "absl-py==2.2.2",
+  "prometheus-client==0.21.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "grpcio-tools==1.71.0",
+  "pytest==8.3.5",
+  "pylint==3.3.7",
+  "ruff==0.11.12",
+  "cmake==3.31.6",
+  "ninja==1.11.1.4",
+  "clang-format==19.1.7",
+  "cpplint==2.0.2",
+]
+# The recall oracle; built from source (pip install --no-build-isolation).
+oracle = ["hnswlib==0.8.0"]
+
+# The installable libraries. models/, serving/, data/ and benchmark/ are
+# applications run from the repository root.
+[tool.setuptools.packages.find]
+where = ["kernels", "compiler"]
+include = ["vectra_kernels*", "vectra_compiler*"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "kernels", "compiler", "build/gen/python"]
+testpaths = [
+  "data",
+  "kernels/tests",
+  "compiler/tests",
+  "models",
+  "serving/tests",
+  "benchmark",
+  "tests",
+]
+python_files = ["test_*.py", "*_test.py"]
+markers = [
+  "gpu: needs a CUDA GPU (runs in .github/workflows/kernel-correctness.yml)",
+  "slow: takes more than a few seconds",
+]
+filterwarnings = ["ignore::DeprecationWarning:google.protobuf.*"]
+
+# Formatting follows the Google Python Style Guide: 80 columns, 4-space
+# indentation. The authoritative lint configuration is .pylintrc (Google's).
+[tool.ruff]
+line-length = 80
+indent-width = 4
+target-version = "py312"
+extend-exclude = ["build", "dist", "Bibliography"]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP"]

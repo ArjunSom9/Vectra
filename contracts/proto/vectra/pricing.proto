@@ -1,0 +1,58 @@
+// Copyright 2025 Texas A&M University
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// The inference gateway: coordinate and attributes in, price out.
+
+syntax = "proto3";
+
+package vectra.pricing.v1;
+
+import "vectra/common.proto";
+
+option cc_enable_arenas = true;
+
+service PricingService {
+  rpc PredictPrice(PredictPriceRequest) returns (PredictPriceResponse);
+}
+
+message PredictPriceRequest {
+  vectra.common.v1.LatLng location = 1;
+  vectra.common.v1.PropertyAttributes attributes = 2;
+  // Comparable search radius. 0 selects the service default.
+  double radius_km = 3;
+  // Number of comparables to retrieve. 0 selects the service default.
+  uint32 num_candidates = 4;
+  // Valuation date in days since 1970-01-01. Only sales before this day are
+  // used as comparables. 0 selects today (UTC).
+  int32 valuation_epoch_day = 5;
+}
+
+message PredictPriceResponse {
+  double predicted_price_usd = 1;
+  // Natural log of the predicted price (the model's regression target).
+  double log_price = 2;
+  // Valid comparables that survived radius trimming.
+  uint32 candidates_used = 3;
+  // Retrieved comparables, nearest first in embedding space.
+  repeated int64 comparable_ids = 4;
+  StageLatency latency = 5;
+}
+
+// Per-stage wall time, in microseconds.
+message StageLatency {
+  uint64 retrieve_us = 1;
+  uint64 batch_wait_us = 2;
+  uint64 inference_us = 3;
+  uint64 total_us = 4;
+}

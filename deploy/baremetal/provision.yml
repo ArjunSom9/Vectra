@@ -1,0 +1,133 @@
+# Provisions engine nodes (Ubuntu 24.04, bare metal) with ansible-core 2.18.6:
+#
+#   ansible-playbook deploy/baremetal/provision.yml -i deploy/envs/prod.yaml
+#
+# Installs the shard binary, its configuration and index, the memlock
+# limits, the boot-time CPU isolation and run-time latency tuning, and a
+# systemd unit that pins the shard to its NUMA node and worker cores.
+# CPU quotas are never applied: CFS throttling destroys thread-per-core
+# determinism (docs/decisions/adr-007-bare-metal-over-k8s.md).
+- name: Vectra engine nodes
+  hosts: engine
+  become: true
+  vars:
+    vectra_user: vectra
+    vectra_prefix: /opt/vectra
+    vectra_dist: "{{ playbook_dir }}/../../dist/engine"
+    vectra_index_dir: /var/lib/vectra/index
+  tasks:
+    - name: Service account
+      ansible.builtin.user:
+        name: "{{ vectra_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+
+    - name: Packages
+      ansible.builtin.apt:
+        name: [numactl, linux-tools-generic, ethtool]
+        update_cache: true
+
+    - name: Directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ vectra_user }}"
+        mode: "0755"
+      loop:
+        - "{{ vectra_prefix }}/bin"
+        - "{{ vectra_prefix }}/configs"
+        - "{{ vectra_index_dir }}"
+
+    - name: Binaries (make dist)
+      ansible.builtin.copy:
+        src: "{{ vectra_dist }}/bin/{{ item }}"
+        dest: "{{ vectra_prefix }}/bin/{{ item }}"
+        mode: "0755"
+      loop: [vectra_shard, shard_inspector, stress_client]
+
+    - name: Engine configuration
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../engine/configs/"
+        dest: "{{ vectra_prefix }}/configs/"
+        mode: "0644"
+      notify: restart vectra-shard
+
+    - name: Memlock and descriptor limits
+      ansible.builtin.copy:
+        src: mlock_limits.conf
+        dest: /etc/security/limits.d/90-vectra.conf
+        mode: "0644"
+
+    - name: Latency tuning script
+      ansible.builtin.copy:
+        src: tune_latency.sh
+        dest: "{{ vectra_prefix }}/bin/tune_latency.sh"
+        mode: "0755"
+
+    - name: CPU isolation of the worker cores (takes effect after reboot)
+      ansible.builtin.lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX='
+        line: >-
+          GRUB_CMDLINE_LINUX="isolcpus=managed_irq,domain,{{ worker_cores }}
+          nohz_full={{ worker_cores }} rcu_nocbs={{ worker_cores }}
+          transparent_hugepage=madvise"
+      register: grub
+
+    - name: Regenerate GRUB
+      ansible.builtin.command: update-grub
+      when: grub.changed
+      changed_when: true
+
+    - name: Tuning unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/vectra-tune.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Vectra latency tuning
+          After=network-online.target
+          [Service]
+          Type=oneshot
+          ExecStart={{ vectra_prefix }}/bin/tune_latency.sh {{ worker_cores }} {{ housekeeping_cores }} {{ nic }}
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Shard unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/vectra-shard.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Vectra shard {{ shard_id }}
+          After=vectra-tune.service network-online.target
+          Requires=vectra-tune.service
+          [Service]
+          User={{ vectra_user }}
+          ExecStart=/usr/bin/numactl --cpunodebind={{ numa_node }} --membind={{ numa_node }} \
+            {{ vectra_prefix }}/bin/vectra_shard \
+            --config_dir={{ vectra_prefix }}/configs \
+            --index={{ vectra_index_dir }}/shard-{{ shard_id }}.vidx \
+            --shard_id={{ shard_id }} --listen=0.0.0.0:{{ shard_port }} \
+            --worker_cores={{ worker_cores }} --lock_memory=true
+          LimitMEMLOCK=infinity
+          LimitNOFILE=1048576
+          Restart=on-failure
+          RestartSec=2
+          [Install]
+          WantedBy=multi-user.target
+      notify: restart vectra-shard
+
+    - name: Enable units
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+      loop: [vectra-tune.service, vectra-shard.service]
+
+  handlers:
+    - name: restart vectra-shard
+      ansible.builtin.systemd_service:
+        name: vectra-shard.service
+        state: restarted
+        daemon_reload: true

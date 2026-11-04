@@ -1,0 +1,42 @@
+# proto-file: contracts/proto/vectra/config.proto
+# proto-message: vectra.config.v1.ClusterTopology
+#
+# Macro-regions (3-character GeoHash scope), server threading, and client
+# channel pooling.
+
+regions {
+  name: "us-west"
+  datacenter: "dc-west"
+  prefixes: ["c2", "9q", "9m", "9t", "9r", "9w"]
+}
+regions {
+  name: "us-central"
+  datacenter: "dc-central"
+  prefixes: ["9x", "9v", "9z", "dp", "9y", "cb"]
+}
+regions {
+  name: "us-east"
+  datacenter: "dc-east"
+  prefixes: ["dj", "dh", "dq", "dr", "dn"]
+}
+
+server {
+  # Production nodes reserve cores 0-3 for the kernel, NIC interrupts and
+  # gRPC's internal threads: worker_cores: "4-95". Empty runs one unpinned
+  # queue per hardware thread, which suits development machines.
+  worker_cores: ""
+  # One poller per queue is the thread-per-core model; gRPC's guide [27]
+  # reports two per queue as its best trade-off, so A1 benchmarks both.
+  threads_per_queue: 1
+  requests_per_queue: 64
+  lock_memory: true
+  max_receive_message_bytes: 16777216
+}
+
+client {
+  # Pre-warmed channels per shard, used round-robin; keeps per-connection
+  # stream counts far below SETTINGS_MAX_CONCURRENT_STREAMS [20] [27].
+  channel_pool_size: 64
+  timeout_ms: 5
+  keepalive_time_ms: 10000
+}

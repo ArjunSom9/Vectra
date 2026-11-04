@@ -1,0 +1,31 @@
+# Python style (Google Python Style Guide): ruff and Google's pylintrc.
+name: python-lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".pylintrc"
+      - ".github/workflows/python-lint.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: scripts/bootstrap.sh --python
+      - run: .venv/bin/ruff check data kernels compiler models serving benchmark tests conftest.py
+      - run: .venv/bin/ruff format --check data kernels compiler models serving benchmark tests conftest.py
+      - name: pylint
+        env:
+          PYTHONPATH: .:kernels:compiler:build/gen/python
+        run: .venv/bin/pylint --rcfile=.pylintrc data kernels compiler models serving benchmark tests conftest.py

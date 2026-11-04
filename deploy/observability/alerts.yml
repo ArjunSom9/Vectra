@@ -1,0 +1,98 @@
+# Alerting rules for the acceptance SLOs (serving/configs/slo.yaml).
+groups:
+  - name: vectra-latency
+    rules:
+      - alert: RetrievalP50AboveOneMillisecond
+        # O1: sub-millisecond p50 retrieval, measured at the client.
+        expr: |
+          histogram_quantile(0.5, sum by (le) (
+            rate(vectra_gateway_stage_seconds_bucket{stage="retrieve"}[5m])))
+          > 0.001
+        for: 10m
+        labels: {severity: page}
+        annotations:
+          summary: Retrieval p50 above 1 ms for 10 minutes
+          runbook: docs/runbooks/incident-latency.md
+
+      - alert: GatewayP99High
+        expr: |
+          histogram_quantile(0.99, sum by (le) (
+            rate(vectra_gateway_stage_seconds_bucket{stage="total"}[5m])))
+          > 0.025
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: PredictPrice p99 above 25 ms
+          runbook: docs/runbooks/incident-latency.md
+
+      - alert: GatewayErrors
+        expr: |
+          sum(rate(vectra_gateway_requests_total{code!~"OK|NOT_FOUND|INVALID_ARGUMENT"}[5m]))
+          / sum(rate(vectra_gateway_requests_total[5m])) > 0.01
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: More than 1% of PredictPrice calls fail server-side
+
+  - name: vectra-engine
+    rules:
+      - alert: ShardDown
+        expr: vectra_shard_up == 0
+        for: 1m
+        labels: {severity: page}
+        annotations:
+          summary: "Shard {{ $labels.shard }} at {{ $labels.endpoint }} is not answering Report"
+          runbook: docs/runbooks/node-bringup.md
+
+      - alert: SearchQpsShortfall
+        # Fleet throughput below 90% of the 50,000 QPS objective during
+        # load tests and peak hours.
+        expr: sum(rate(vectra_shard_rpcs_completed_total[1m])) < 45000
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: Fleet throughput below 45,000 RPC/s
+
+      - alert: CallPoolAllocating
+        # Steady state reuses pre-registered calls; new allocations mean the
+        # pool is undersized for the offered load (requests_per_queue).
+        expr: increase(vectra_shard_call_pool_allocations[10m]) > 0
+        labels: {severity: ticket}
+        annotations:
+          summary: "Shard {{ $labels.shard }} worker {{ $labels.worker }} allocated calls after start-up"
+
+      - alert: IndexNotLocked
+        expr: vectra_shard_memory_locked == 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "Shard {{ $labels.shard }} index is not locked in RAM"
+          runbook: deploy/baremetal/README.md
+
+      - alert: ShardNearlyFull
+        expr: vectra_shard_vectors / vectra_shard_capacity > 0.9
+        labels: {severity: ticket}
+        annotations:
+          summary: "Shard {{ $labels.shard }} above 90% of capacity"
+          runbook: docs/runbooks/resharding.md
+
+  - name: vectra-gpu
+    rules:
+      - alert: GpuDramActivityDropped
+        # The fused kernel keeps HBM busy while serving; a sustained drop
+        # with traffic present suggests the eager path is running.
+        expr: |
+          avg by (Hostname) (DCGM_FI_PROF_DRAM_ACTIVE) < 0.05
+          and on() sum(rate(vectra_gateway_requests_total[5m])) > 100
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: GPU DRAM activity low under load; check the compiled bundle
+          runbook: docs/runbooks/gpu-node-recovery.md
+
+      - alert: GpuXidErrors
+        expr: increase(DCGM_FI_DEV_XID_ERRORS[10m]) > 0
+        labels: {severity: page}
+        annotations:
+          summary: "XID error on {{ $labels.Hostname }}"
+          runbook: docs/runbooks/gpu-node-recovery.md

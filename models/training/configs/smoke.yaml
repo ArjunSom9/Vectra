@@ -1,0 +1,17 @@
+# Tiny configuration for CI and unit tests: seconds on a laptop CPU.
+model:
+  embedding_dim: 128
+  attribute_dim: 5
+  d_model: 32
+  num_heads: 2
+  num_layers: 2
+  ffn_dim: 64
+  num_candidates: 16
+  min_candidates: 4
+
+training:
+  batch_size: 64
+  epochs: 2
+  learning_rate: 1.0e-3
+  weight_decay: 0.01
+  seed: 0

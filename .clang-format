@@ -1,0 +1,12 @@
+# The Google C++ Style Guide as encoded by clang-format 19.1.7 (pinned in
+# pyproject.toml). `make format` applies it; CI checks it.
+---
+Language: Cpp
+BasedOnStyle: Google
+Standard: c++20
+DerivePointerAlignment: false
+PointerAlignment: Left
+---
+Language: Proto
+BasedOnStyle: Google
+...

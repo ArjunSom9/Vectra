@@ -1,0 +1,52 @@
+# OpenTelemetry Collector (contrib) 0.127.0 on the monitoring host.
+#
+# Metrics: the collector scrapes the same Prometheus endpoints as
+# prometheus.yml and forwards them to the long-term store, so short-retention
+# Prometheus and long-term history see identical series.
+# Traces: the OTLP receivers are ready for spans. The services do not emit
+# spans yet; per-stage timings travel in PredictPriceResponse.latency and the
+# vectra_gateway_stage_seconds histogram.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: vectra
+          scrape_interval: 15s
+          static_configs:
+            - targets:
+                - gpu-1.vectra.internal:9464
+                - gpu-2.vectra.internal:9464
+                - monitor.vectra.internal:9465
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  batch: {}
+
+exporters:
+  prometheusremotewrite:
+    endpoint: https://metrics-store.vectra.internal/api/v1/write
+  otlp:
+    endpoint: traces-store.vectra.internal:4317
+
+service:
+  telemetry:
+    metrics:
+      level: normal
+  pipelines:
+    metrics:
+      receivers: [prometheus, otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheusremotewrite]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp]

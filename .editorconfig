@@ -49,12 +49,12 @@ max_line_length = 80
 
 # ------------------------------------------------------------------------------
 #  Python — kernels/ compiler/ models/ serving/ data/ benchmark/ tests/
-#  4 spaces / 100 columns: mirrors ruff, line-length = 100 pinned in
-#  pyproject.toml [tool.ruff].
+#  4 spaces / 80 columns: the Google Python Style Guide, mirrored by ruff
+#  (line-length = 80 in pyproject.toml [tool.ruff]) and .pylintrc.
 # ------------------------------------------------------------------------------
 [*.py]
 indent_size = 4
-max_line_length = 100
+max_line_length = 80
 
 # ------------------------------------------------------------------------------
 #  Protobuf contracts — contracts/proto/
@@ -160,7 +160,7 @@ max_line_length = off
 # ------------------------------------------------------------------------------
 #  Pinned dependency lock — one specifier per line, never wrapped.
 # ------------------------------------------------------------------------------
-[requirements-lock.txt]
+[requirements*-lock.txt]
 max_line_length = off
 
 # ------------------------------------------------------------------------------

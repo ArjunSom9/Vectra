@@ -1,158 +1,125 @@
 # Contributing to Vectra
 
-Thank you for investing time in Vectra — a geo-distributed vector search and
-Transformer inference engine engineered to serve 50,000 queries per second
-across 10 million property embeddings at sub-millisecond latency.
+Thank you for investing time in Vectra, a geo-distributed vector search and
+Transformer inference engine designed to serve 50,000 queries per second
+across 10 million property embeddings at sub-millisecond p50 latency.
 
-This document is the contract between you and the repository. Everything in
-it is **enforced by CI** — the rules below describe gates that already exist,
-not aspirations.
-
----
-
-## Table of Contents
-
-- [The Four House Rules](#the-four-house-rules)
-- [Getting Started](#getting-started)
-- [Repository Invariants](#repository-invariants)
-- [Development Workflow](#development-workflow)
-- [Code Style](#code-style)
-- [Testing Requirements](#testing-requirements)
-- [Performance-Sensitive Changes](#performance-sensitive-changes)
-- [Pillar-Specific Rules](#pillar-specific-rules)
-- [Dependency and Version Changes](#dependency-and-version-changes)
-- [Adding New Files](#adding-new-files)
-- [Pull Request Process](#pull-request-process)
-- [Issue Reporting](#issue-reporting)
-- [Security](#security)
-- [Documentation Contributions](#documentation-contributions)
-- [License and Sign-off](#license-and-sign-off)
-- [Code of Conduct](#code-of-conduct)
+This document is the contract between you and the repository. Each rule
+says how it is enforced: by a CI workflow (**CI**), by a test (**test**), or
+by review (**review**).
 
 ---
 
-## The Four House Rules
+## The four house rules
 
-These govern every decision in this repository. If a contribution conflicts
-with one of them, the contribution changes — not the rule.
-
-1. **Every claim is a gated benchmark.** If a PR asserts a number, the harness
-   that measures it runs in CI. Performance claims without reproduction
-   commands are review-blocked.
-2. **Every optimization ships behind an oracle.** hnswlib validates the
-   engine's recall; the eager reference validates the Triton kernel's
-   numerics; the un-compiled model validates the FX rewrite pass. You never
-   land an optimization whose correctness oracle doesn't already exist.
-3. **Documentation is written at the moment of decision — never after.**
-   ADRs land in the same PR as the decision they record.
-4. **Two sources of truth move as one unit.** `.editorconfig` and the
-   formatters change together; PyTorch, `pytorch-triton`, and CUDA change
-   together; gRPC and protobuf change together. Partial bumps are rejected.
+1. **Every claim has a harness.** A number in a PR, a document or a golden
+   file comes with the command that measures it. Targets stay labelled as
+   targets until a recorded run on the reference hardware says otherwise.
+   (review; `tests/regression/compare_snapshots.py`)
+2. **Every optimization ships behind an oracle.** Brute force and hnswlib
+   validate the engine's recall; a float64 reference validates the kernel;
+   the eager model validates the compiler rewrite. Never land an
+   optimization whose oracle does not already exist. (test)
+3. **Documentation is written at the moment of decision.** ADRs land in the
+   same PR as the decision they record. (review)
+4. **Paired versions move as one unit.** PyTorch, its pinned `triton` and the
+   CUDA wheels; gRPC and its vendored protobuf; `.editorconfig` and the
+   formatter configurations. Partial bumps are rejected
+   ([ADR-008](docs/decisions/adr-008-toolchain-pins.md)). (review)
 
 ---
 
-## Getting Started
+## Getting started
 
 ```bash
-git clone https://github.com/vectra-labs/vectra.git
-cd vectra
+git clone https://github.com/ArjunSom9/Vectra.git
+cd Vectra
+git config core.autocrlf input        # Windows: keep LF endings
 
-# Windows contributors: normalize line endings on checkout
-git config core.autocrlf input
-
-./scripts/bootstrap.sh          # installs the pinned toolchain
-make proto                      # generates gRPC stubs — never commit them
-make build                      # engine binaries + Python packages
-make test                       # all suites (see Testing Requirements)
-
-# Smoke the full local stack: 1 router + 3 shards + inference gateway
-./scripts/run_local_cluster.sh
+scripts/bootstrap.sh                  # GCC 14, .venv from the lock, gRPC 1.71.0
+source .venv/bin/activate
+make proto                            # Python stubs into build/gen/python (never committed)
+make build                            # engine binaries + editable Python install
+make test                             # every suite that runs on this host
+scripts/run_local_cluster.sh --with-gateway   # three shards + the gateway
 ```
 
-**Editor setup:** VS Code requires the EditorConfig extension
-(`EditorConfig.EditorConfig` — not built in) plus clangd for the C++ pillar;
-JetBrains IDEs and Neovim ≥ 0.9 support everything natively.
+Without gRPC installed, `make build-engine-core test-engine` and
+`python -m pytest` still build and test everything except the C++ server
+layer.
 
-**Read before your first PR:** [`README.md`](README.md),
-[`docs/architecture/01-overview.md`](docs/architecture/01-overview.md) through
-`09-subgraph-rewrite.md`, and the [ADR index](docs/decisions/) — the eight
-recorded decisions explain why the repo is shaped the way it is.
+**Editor setup:** EditorConfig support (the VS Code extension
+`EditorConfig.EditorConfig`) and clangd for C++.
+
+**Read before your first PR:** [`README.md`](README.md), the architecture
+documents [`01`](docs/architecture/01-overview.md) to
+[`09`](docs/architecture/09-subgraph-rewrite.md), and the
+[ADRs](docs/decisions/).
 
 ---
 
-## Repository Invariants
-
-Five rules with no exceptions. CI catches all five:
+## Repository invariants
 
 | # | Invariant | Enforcement |
 |---|---|---|
-| 1 | **Nothing derived is committed** — stubs, corpus, reports, captures, checkpoints | `cpp-build.yml` diff check + `.gitignore` |
-| 2 | **Nothing that gates CI is ignored** — goldens, harness sources | `.gitignore` trailing negations |
-| 3 | **No secret ever enters history** — `.env`, keys, certs | secret-scanning + `*.local.yaml` convention |
-| 4 | **`.gitkeep` files stay exactly zero bytes** | `editorconfig-checker` in `python-lint.yml` |
-| 5 | **Goldens are contracts, not artifacts** — `tests/regression/golden_*.json` | regression suite fails on drift |
-
-Local configuration goes in `*.local.yaml` files (untracked by design).
-Committed configuration lives in the versioned `configs/` trees.
+| 1 | **Nothing derived is committed**: stubs, corpora, reports, profiler captures, checkpoints, bundles | `.gitignore`; review |
+| 2 | **Nothing that gates CI is ignored**: goldens, harness sources | `.gitignore` trailing negations |
+| 3 | **No secret enters history**: `.env`, keys, certificates | review; keep local overrides in untracked `*.local.yaml` files |
+| 4 | **`.gitkeep` files stay zero bytes** | `.editorconfig`; review |
+| 5 | **Goldens are contracts**: `tests/regression/golden_*.json` hold the design's thresholds, and a baseline only from a recorded run | `tests/regression/compare_snapshots_test.py` (test) |
 
 ---
 
-## Development Workflow
+## Development workflow
 
-**Branching** — short-lived branches off `main`:
+**Branches**: short-lived, off `main`:
 
 ```
-<type>/<scope>-<slug>
 feat/engine-geofilter-cache
 fix/kernels-masked-tail-parity
 perf/compiler-pattern-match
-docs/adr-009-…
+docs/adr-009-...
 ```
 
-**Commits** — Conventional Commits with a pillar scope:
+**Commits**: Conventional Commits with a scope:
 
 ```
-feat(engine): route adjacent-cell fanout only to intersecting shards
+feat(engine): push the sale-date bound into the search predicate
 fix(kernels): mask BLOCK_K tail loads at odd sequence lengths
-perf(compiler): cache subgraph match across post-grad passes
-docs(decisions): record ADR-009 for PQ sub-space count
+perf(compiler): skip canonicalization outside logit chains
+docs(decisions): record ADR-009
 ```
 
-Valid scopes: `engine`, `kernels`, `compiler`, `models`, `serving`,
-`contracts`, `data`, `bench`, `deploy`, `docs`, `ci`.
+Scopes: `engine`, `kernels`, `compiler`, `models`, `serving`, `contracts`,
+`data`, `bench`, `deploy`, `docs`, `ci`.
 
-**Sign-off** — every commit requires a DCO sign-off (`git commit -s`):
-
-```
-Signed-off-by: Your Name <you@example.com>
-```
+**Sign-off**: every commit carries a DCO sign-off (`git commit -s`). (review)
 
 **Before pushing:**
 
 ```bash
-make lint          # ruff + clang-format --dry-run + shfmt + shellcheck
-make test          # full local suite
+make lint      # clang-format, cpplint, ruff check, ruff format --check, pylint
+make test
 ```
 
 ---
 
-## Code Style
+## Code style
 
-`.editorconfig` is the editor baseline; the formatters are the law. The two
-are numerically identical by design — if one changes, both change in the
-same commit.
+The Google style guides, enforced by their tools. `.editorconfig` carries
+the same numbers for editors; if one changes, both change in the same
+commit.
 
-| Language | Authority | Rules |
-|---|---|---|
-| C++ | `clang-format` (Google, 80 col) | 2-space, no in-source builds, presets only → `/build/` |
-| Python | `ruff` lint + format (100 col) | 4-space, `target-version = "py312"` |
-| Protobuf | `buf format` | 2-space, 80 col |
-| Shell | `shfmt -i 2` + `shellcheck` | 2-space |
-| YAML/JSON/MD | `.editorconfig` | trailing-whitespace protections as configured |
+| Language | Authority | Rules | Enforcement |
+|---|---|---|---|
+| C++ | `.clang-format` (Google) + `CPPLINT.cfg` | C++20, 2-space, 80 columns, `.cc`/`.h`, no exceptions, `kConstant`, `trailing_` members | CI (`cpp-build.yml`) |
+| Python | `ruff` + `.pylintrc` (Google's) | 4-space, 80 columns, single quotes, modules imported not names, Google docstrings | CI (`python-lint.yml`) |
+| Protobuf | `.clang-format` (Proto section) | 2-space, 80 columns | CI (`cpp-build.yml`) |
+| Shell | `bash -n`; `shellcheck` recommended | 2-space, `set -euo pipefail` | review |
+| YAML, JSON, Markdown | `.editorconfig` | as configured | review |
 
-**License headers.** Every new source file carries the Apache 2.0 boilerplate
-from the [`LICENSE`](LICENSE) appendix, adapted to the file's comment syntax.
-Python short form:
+**License headers.** Every new source file carries the Apache 2.0 header,
+adapted to its comment syntax (review):
 
 ```python
 # Copyright 2025 Texas A&M University
@@ -170,259 +137,221 @@ Python short form:
 # limitations under the License.
 ```
 
-The header-presence lint in `python-lint.yml` / `cpp-build.yml` fails builds
-that omit it.
-
-**Blob guard.** Any file larger than 1 MB outside `data/` fails CI. If you
-genuinely need to commit a large artifact, that is almost certainly a bug —
-it belongs in a benchmark report, the corpus, or a release.
+**Large files.** Nothing larger than 1 MB outside `data/`. A large artifact
+belongs in a report, the corpus or a release. (review)
 
 ---
 
-## Testing Requirements
+## Testing requirements
 
-**The test-with-feature rule:** no file lands without a test exercising it.
-This is the standing rule from the implementation plan, and it applies
-retroactively to review — a PR adding behavior without its test is returned.
+**The test-with-feature rule:** behavior lands with the test that exercises
+it. (review)
 
-| Pillar | Suites (`make test-*`) | Correctness oracle |
+| Area | Suites | Oracle |
 |---|---|---|
-| `engine/` | `unit`, `integration`, `boundary` | hnswlib recall parity at matched `ef_search` |
-| `kernels/` | `test_parity`, `test_edges` | the eager reference implementation |
-| `compiler/` | `pattern_matching`, `rewrite_correctness`, `e2e_compile` | un-compiled model numerics |
-| Cross-cutting | `e2e_pipeline`, `regression` | golden snapshots |
+| `engine/` | `engine/tests/{unit,boundary,integration}` (`make test-engine`; integration needs gRPC) | brute force (`BruteForceKnn`); hnswlib in `make bench-recall` |
+| `kernels/` | `test_parity`, `test_edges`, `test_custom_op` | float64 expansion; the eager chain |
+| `compiler/` | `test_pattern_matching`, `test_rewrite_correctness`, `test_e2e_compile` | the eager model |
+| `models/`, `serving/`, `data/` | `models/tests`, `serving/tests`, `data/tests` | exact fake shards; eager model |
+| Cross-cutting | `tests/e2e_pipeline_test.py` (the real engine when built), `tests/regression`, `benchmark/harness_test.py` | golden thresholds |
 
-Additional hard rules:
+Hard rules:
 
-- `make test-kernels` requires a CUDA 13 GPU locally; CI runs it on the GPU
-  runner via `kernel-correctness.yml`.
-- Any change to `engine/src/routing/` requires the **boundary suites** —
-  100% adjacent-cell recall is a gate, not a goal.
-- Kernel parity tolerances tighten only with Nsight evidence attached.
-- Any GeoHash precision change re-runs `make bench-recall` and updates
-  `docs/research/hnsw-parameter-study.md`.
+- `make test-kernels` runs everywhere: the tiled emulation and the operator's
+  CPU path always, and the Triton kernel on a CUDA GPU or under
+  `TRITON_INTERPRET=1` on Linux x86-64 (`kernel-correctness.yml`).
+- Any change to `engine/src/routing/` runs the boundary suites. Exact-mode
+  boundary recall of 1.0 is a gate, not a goal. (test)
+- Memory-ownership changes in `engine/` pass `make test-engine-sanitizers`
+  (ASan+UBSan and TSan). (CI matrix)
+- Kernel parity tolerances tighten only with evidence.
+- Index parameter changes re-run `make bench-recall` and update
+  [`hnsw-parameter-study.md`](docs/research/hnsw-parameter-study.md).
 
 ---
 
-## Performance-Sensitive Changes
+## Performance-sensitive changes
 
-**Trigger list.** A PR touching any of these requires benchmark evidence in
-its description:
+A PR touching these areas includes benchmark evidence in its description:
 
-| Area | Required evidence | Command |
+| Area | Evidence | Command |
 |---|---|---|
-| `engine/src/{server,index,routing}/`, `engine/client/` | before/after p50/p99/p99.9 + 10-min soak | `make bench-qps` |
-| `kernels/vectra_kernels/` | throughput, bandwidth, parity deltas | `make bench-gpu` + `make bench-bandwidth` |
-| `compiler/vectra_compiler/` | compile log showing pattern match + e2e numerics | `make test-compiler` |
-| HNSW parameters | recall sweep vs. oracle | `make bench-recall` |
+| `engine/src/{server,service,index,routing}/`, `engine/client/` | before/after p50, p99, p99.9 from a 10-minute soak | `make bench-qps` |
+| `kernels/vectra_kernels/` | throughput, bytes, parity | `make bench-gpu`, `make bench-bandwidth` |
+| `compiler/vectra_compiler/` | the compile log's match counts, e2e numerics | `make test-compiler` |
+| Index parameters | recall sweep against the oracle | `make bench-recall` |
 
-**Golden policy.** `tests/regression/golden_*.json` values are CI contracts:
+**Golden policy.** The thresholds in `tests/regression/golden_*.json` are
+the design's acceptance criteria and move only with an ADR. Baselines are
+recorded only from a real run, with `compare_snapshots.py --update
+--environment="..."`, never written by hand. A regression against a recorded
+baseline fails the gate. Accepting one needs maintainer sign-off and an ADR.
 
-- **Improvements** may update goldens in the same PR, with the benchmark
-  output pasted into the description.
-- **Regressions fail the build.** Accepting one requires maintainer sign-off
-  and an ADR explaining the trade.
-- Goldens never move silently, as collateral of an unrelated change, or
-  without the reproducing harness in the same PR.
-
-**Latency budget.** Changes to the request hot path update
-[`docs/research/latency-budget.md`](docs/research/latency-budget.md) — the
-microsecond ledger is maintained, not archived.
+**Latency budget.** Changes to the request path update
+[`latency-budget.md`](docs/research/latency-budget.md).
 
 ---
 
-## Pillar-Specific Rules
+## Area-specific rules
 
 ### `engine/` (C++)
 
-- **One ABI.** Everything builds with the pinned GCC 14, `-std=c++20`,
-  libstdc++. Mixing compilers or STLs in a link is rejected.
-- **No allocation on the request hot path.** The `CallData` lifecycle is
-  explicit; the arena owns the graph. New per-request heap allocations need
-  justification in the PR.
-- **Run sanitizers** (`cmake -DVECTRA_SANITIZE=address,undefined`) before
-  submitting anything that touches memory ownership.
-- **No container defaults.** The engine runs thread-per-core on bare metal —
-  never add Docker/Kubernetes defaults to `engine/` (see
-  [ADR-007](docs/decisions/adr-007-bare-metal-over-k8s.md)).
+- **One ABI.** GCC 14, `-std=c++20`, libstdc++; gRPC is built with the same
+  toolchain (`scripts/bootstrap.sh --grpc`).
+- **No call allocation on the request path.** Calls are pre-registered and
+  recycled; `WorkerStats.call_pool_allocations` must stay at 0 under load.
+  New per-request heap allocations need justification in the PR.
+- **Exceptions are not used** (Google style); errors are `absl::Status` or
+  `grpc::Status`.
+- **Bare metal.** Never add container defaults to `engine/`
+  ([ADR-007](docs/decisions/adr-007-bare-metal-over-k8s.md)).
 
 ### `kernels/` (Triton)
 
-- **Only `pytorch-triton` from the pinned PyTorch wheel.** Never install
-  standalone Triton or the similarly named `torchtriton` (supply-chain
-  attack; see [Security](#security)).
-- The eager reference is authoritative until a parity test says otherwise.
-- `tile_configs.py` changes re-run the autotune sweep and update
-  `docs/research/triton-tiling-study.md`.
+- **Triton only through PyTorch's pinned dependency** (`triton==3.3.0` on
+  Linux x86-64). Never install `torchtriton` (see [Security](#security)).
+- The float64 oracle is authoritative.
+- `tile_configs.py` changes re-run the tiling sweep
+  (`python -m kernels.benchmarks.throughput --sweep`) and update
+  [`triton-tiling-study.md`](docs/research/triton-tiling-study.md).
 
 ### `compiler/` (FX pass)
 
-- **New pattern workflow:** add the pattern/replacement pair, a
-  `test_pattern_matching.py` case covering **at least three structurally
-  different authoring styles** (matching is use-def topological, never
-  name-based — prove it), a `pattern_registry.md` entry, and the
-  `authoring_for_dynamo.md` update if authoring rules change.
-- **Loud-failure guarantee.** If a model is expected to contain the spatial
-  pattern and compilation finds none, compilation fails — never silently
-  degrades to eager.
+- **New formulation workflow**: a catalog entry, positive cases in at least
+  three structurally different authoring styles, the look-alikes it must not
+  match, and the per-formulation exactness test
+  ([`pattern_registry.md`](compiler/guides/pattern_registry.md)).
+- **Loud failure.** If the model's attention is not fully rewritten, the
+  deployment compile fails; it never degrades to eager.
 
 ### `models/`
 
-- **The readable-model guarantee.** `models/` contains zero GPU-specific
-  imports, zero manual kernel invocations, zero `torch.compile` calls —
-  compilation happens exclusively in `models/export/compile_entry.py`.
-- **All data-dependent control flow uses `torch.cond`.** One graph break
-  silently disables the kernel rewrite; CI lints for this and fails.
+- **The readable-model guarantee.** No GPU-specific imports, no kernel
+  calls, no `torch.compile` in `models/price_transformer/`. Compilation
+  happens only in `models/export/compile_entry.py`. (review)
+- **Data-dependent control flow uses `torch.cond`.** One graph break hides
+  the attention from the rewrite.
+  (test: `test_model_captures_as_a_single_graph`)
 
 ---
 
-## Dependency and Version Changes
-
-Dependency bumps are structural changes, treated like architecture:
+## Dependency and version changes
 
 | Move together | Never split |
 |---|---|
-| PyTorch ↔ `pytorch-triton` ↔ CUDA toolkit | the three are one lockfile unit |
-| gRPC ↔ protobuf | gRPC's vendored protobuf only |
-| NVIDIA driver ↔ CUDA ↔ PyTorch | update `deploy/gpu/driver_matrix.md` in the same PR |
-| `.editorconfig` ↔ `.clang-format` / `ruff` config | one commit, both files |
+| PyTorch, its `triton`, the `nvidia-*` CUDA wheels | one lock-file unit |
+| gRPC C++ tag, `grpcio`, `grpcio-tools`, protobuf runtime | same gRPC release |
+| NVIDIA driver, CUDA, PyTorch | update `deploy/gpu/driver_matrix.md` in the same PR |
+| `.editorconfig`, `.clang-format`, `pyproject.toml [tool.ruff]`, `.pylintrc` | one commit |
 
-Any dependency change must:
+A dependency change must:
 
-1. Regenerate `requirements-lock.txt` and update `scripts/bootstrap.sh`.
-2. Re-run `make test-kernels` (GPU runner) if the ML stack moved.
-3. Regenerate `NOTICE` via `make dist` and verify each third-party holder
-   name against upstream — attribution drift is a release blocker.
-4. Land an ADR if the change crosses a major version boundary.
-
-Python stays on 3.12 until a pinned, reviewed upgrade ADR says otherwise.
-
----
-
-## Adding New Files
-
-- **Placement** follows the [repository layout](README.md#repository-layout)
-  and the master directory outline — when in doubt, the pillar owns the file.
-- **New benchmark output directory** → register it in the corresponding
-  section of `.gitignore` in the same PR (the section banners exist to keep
-  the generated/source boundary auditable).
-- **New empty scaffold** → commit a zero-byte `.gitkeep` (the `.editorconfig`
-  protects it from accidental newline insertion).
-- **New ADR** → next number (currently **009**), format:
-  *Context / Decision / Alternatives Considered / Consequences*, one file
-  per decision in `docs/decisions/`.
+1. Stay inside the project's version policy (ADR-008): released on or before
+   2025-05-30, not yanked.
+2. Regenerate both lock files (`make lock`) and update `scripts/bootstrap.sh`
+   if a tool moved.
+3. Re-run the full suites, and the GPU suites if the ML stack moved.
+4. Update `NOTICE` by hand, checking each holder's name upstream.
+5. Land an ADR if it crosses a major version.
 
 ---
 
-## Pull Request Process
+## Adding new files
 
-**Hard gates** — the checklist CI and reviewers apply mechanically:
+- **Placement**: the owning area's directory (see the workstream table in
+  the README).
+- **New output directory**: register it in `.gitignore` in the same PR.
+- **New empty scaffold**: a zero-byte `.gitkeep`.
+- **New ADR**: the next number (currently 009), with Context, Decision,
+  Consequences and Alternatives considered.
 
-- [ ] Every commit carries `Signed-off-by:` (`git commit -s`)
-- [ ] All four workflows green: `cpp-build`, `python-lint`,
-      `kernel-correctness`, `docs-publish`
+---
+
+## Pull request process
+
+- [ ] Every commit is signed off (`git commit -s`)
+- [ ] Workflows green: `cpp-build`, `python-lint`, `kernel-correctness`
 - [ ] New source files carry the Apache 2.0 header
-- [ ] Diff contains zero generated artifacts (stubs, corpus, reports,
-      `.ncu-rep`, checkpoints)
-- [ ] Diff contains zero goldens — **or** this is a labeled perf PR with
-      before/after evidence
-- [ ] The change ships with its tests
-- [ ] Performance-sensitive paths touched → benchmark evidence in the
-      description
+- [ ] No generated artifacts in the diff
+- [ ] No golden changes, or a labelled performance PR with evidence
+- [ ] Tests ship with the change
+- [ ] Performance-sensitive paths → benchmark evidence
 - [ ] Decision-level change → ADR in the same PR
-- [ ] Dependencies changed → lockfile + `NOTICE` + pairing table honored
+- [ ] Dependencies changed → lock files, `NOTICE`, pairing table
 
-**Review expectations:** one approval from a pillar owner for ordinary
-changes; two approvals (pillar owner + maintainer) for anything on the
-performance trigger list, a version pairing, or a golden update. Reviews
-focus on invariants, oracles, and evidence — style is the formatters' job.
-
-**PRs are small.** If it can't be reviewed in one sitting, split it — the
-phase-gated structure of the project exists precisely to make this natural.
+One approval from an area owner for ordinary changes. Two (area owner and
+maintainer) for anything on the performance list, a version pairing, or a
+golden change. Reviews focus on invariants, oracles and evidence; style is
+the formatters' job. Keep PRs reviewable in one sitting.
 
 ---
 
-## Issue Reporting
+## Issue reporting
 
-**Bugs** — include the reproduction commands and an environment block:
+**Bugs**: the reproduction commands and an environment block:
 
 ```
 OS / driver / CUDA / PyTorch / gRPC versions
 Cluster topology (node count, shard map excerpt)
-Config: ef_search, channel_pool_size, geohash policy
+Config: ef_search, rerank_depth, channel_pool_size, geohash policy
 ```
 
-**Performance regressions** — mandatory: p50/p99/p99.9 percentiles, the
-workload, `ef_search`, and whether the cluster was under soak. "It feels
-slower" cannot be triaged.
+**Performance regressions**: p50, p99 and p99.9, the workload,
+`ef_search`, and whether the cluster was under soak. "It feels slower"
+cannot be triaged.
 
-**Feature requests** — architectural features open as an ADR proposal
-first; the discussion happens on the document, not in comment threads.
+**Feature requests**: architectural features start as an ADR proposal.
 
 ---
 
 ## Security
 
-**Report vulnerabilities privately to `security@vectra-labs.dev` — never
-via public issues.** We follow coordinated disclosure with a 90-day window.
+Report vulnerabilities privately through the repository's GitHub private
+vulnerability reporting, never in a public issue. We follow coordinated
+disclosure with a 90-day window.
 
-Supply-chain rules (the CI-enforced ones):
+Supply-chain rules:
 
-- Triton arrives **only** as `pytorch-triton` inside the pinned PyTorch
-  wheel. The package named `torchtriton` on PyPI was a real dependency
-  confusion attack against this exact ecosystem — do not install it.
-- `make dist` runs `pip-audit` before packaging; a finding blocks release.
-- Dependency review runs on every lockfile diff.
-
----
-
-## Documentation Contributions
-
-- **Docs-with-decision:** runbooks are written from real incidents, research
-  notes from real sweeps, ADRs from real decisions. A document describing
-  work that hasn't happened yet gets returned.
-- Architecture docs 01–09 mirror the design document and change only via
-  ADR-backed PRs.
-- Diagrams: edit the `.mmd` sources in
-  `docs/architecture/diagrams/sources/`, export the `.svg`, commit both.
+- Triton arrives only as PyTorch's pinned dependency. `torchtriton` was the
+  name used in the December 2022 dependency-confusion attack on PyTorch's
+  nightly channel. Do not install it.
+- Installs pass `--exclude-newer 2025-05-30T23:59:59Z`, so even source
+  builds resolve only pinned-window build dependencies.
+- Model checkpoints are safetensors and JSON; loading one never executes
+  code from the file.
 
 ---
 
-## License and Sign-off
+## Documentation contributions
 
-By contributing, you agree that your contributions are licensed under the
-[Apache License 2.0](LICENSE) and that you have the right to license them
-as such. Every commit carries a `Signed-off-by:` line certifying the
-[Developer Certificate of Origin](https://developercertificate.org/):
-
-```
-Developer Certificate of Origin, Version 1.1
-
-By making a contribution to this project, I certify that:
-
-(a) The contribution was created in whole or in part by me and I have the
-    right to submit it under the Apache License 2.0; or ...
-```
-
-New files carry the header. Dependency changes regenerate `NOTICE`. That's
-the whole legal surface — Apache 2.0 keeps it that way.
+- Runbooks come from real procedures, research notes from real sweeps, ADRs
+  from real decisions. A target is never written as a result.
+- Architecture documents 01–09 change only through ADR-backed PRs, and
+  record where the implementation corrects the design document.
+- Diagrams are plain SVG with an explicit white background, in
+  `docs/architecture/diagrams/`.
 
 ---
 
-## Code of Conduct
+## License and sign-off
+
+By contributing you agree that your contributions are licensed under the
+[Apache License 2.0](LICENSE), and that you have the right to license them
+as such. The `Signed-off-by:` line certifies the
+[Developer Certificate of Origin](https://developercertificate.org/).
+
+---
+
+## Conduct
 
 Be rigorous, be kind, and assume competence. Review the code, not the
-person; critique with evidence, accept critique with grace. Technical
-disagreements get resolved with benchmarks and ADRs — the repo's entire
-philosophy — not with volume. The full
-[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) applies to everyone participating
-in issues, reviews, and discussions.
+person; critique with evidence, and accept critique gracefully. Technical
+disagreements are settled with benchmarks and ADRs.
 
 ---
 
 ## Questions
 
-Architecture and design questions → GitHub Discussions.
-Operational questions → the relevant [runbook](docs/runbooks.md) first, then
-an issue if the runbook is wrong (in which case, fix the runbook — that's
-the docs-with-decision rule working as intended).
+Architecture and design questions go to GitHub Discussions. Operational
+questions: the relevant [runbook](docs/runbooks/) first, then an issue if
+the runbook is wrong (and then fix the runbook).

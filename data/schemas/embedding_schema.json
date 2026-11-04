@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/vectra-labs/vectra/data/schemas/embedding_schema.json",
+  "title": "PropertyEmbedding",
+  "description": "The embeddings column: one row per corpus record, produced by data/embedding_model.py. Values are tanh outputs, so every component lies in [-1, 1] and the squared norm is at most the dimension.",
+  "type": "array",
+  "minItems": 128,
+  "maxItems": 128,
+  "items": {"type": "number", "minimum": -1, "maximum": 1},
+  "x-column": "embeddings",
+  "x-dtype": "<f4",
+  "x-dimension": 128,
+  "x-finite": true
+}

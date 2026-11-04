@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="390" viewBox="0 0 900 390" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>Vectra memory hierarchy</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="40" y="36" font-size="15" font-weight="bold" fill="#0f172a">RBF attention at the serving shape (batch 64, 65 tokens, 4 heads × 32, fp16)</text>
+  <rect x="40" y="60" width="380" height="200" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="230.0" y="82" text-anchor="middle" font-weight="bold" font-size="14" fill="#0f172a">Eager chain: one kernel per operator</text>
+  <text x="230.0" y="100" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">sub → [B,H,Nq,Nk,D] to HBM      71 MB</text>
+  <text x="230.0" y="118" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">pow → read + write                   138 MB</text>
+  <text x="230.0" y="136" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">sum → read + write                     71 MB</text>
+  <text x="230.0" y="154" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">neg, scale, bias                       13 MB</text>
+  <text x="230.0" y="172" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">softmax                                   4.3 MB</text>
+  <text x="230.0" y="190" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">@ V                                         4.3 MB</text>
+  <text x="230.0" y="208" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">total ≈ 303 MB through HBM</text>
+  <text x="230.0" y="226" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">intensity ≈ 0.6 FLOP/B</text>
+  <rect x="480" y="60" width="380" height="200" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="670.0" y="82" text-anchor="middle" font-weight="bold" font-size="14" fill="#0f172a">Fused kernel: one pass</text>
+  <text x="670.0" y="100" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">Q tile: HBM → SRAM once</text>
+  <text x="670.0" y="118" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">K, V tiles stream through SRAM</text>
+  <text x="670.0" y="136" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">q·kᵀ on tensor cores (tl.dot)</text>
+  <text x="670.0" y="154" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">‖q‖² + ‖k‖² − 2q·k in registers</text>
+  <text x="670.0" y="172" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">online softmax: running max, sum</text>
+  <text x="670.0" y="190" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">out: SRAM → HBM once</text>
+  <text x="670.0" y="208" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">total ≈ 4.3 MB through HBM (1.4%)</text>
+  <text x="670.0" y="226" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">intensity ≈ 34 FLOP/B (&lt; 295 ridge)</text>
+  <rect x="40" y="290" width="820" height="80" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <text x="450.0" y="312" text-anchor="middle" font-weight="bold" font-size="14" fill="#0f172a">H100 SXM5 memory hierarchy</text>
+  <text x="450.0" y="330" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">registers · shared memory 228 KB/SM · L2 50 MB · HBM3 80 GB at ~3.35 TB/s</text>
+  <text x="450.0" y="348" text-anchor="middle" font-weight="normal" font-size="12" fill="#0f172a">At batch 64 the fused working set (4.3 MB) fits in L2: measure DRAM throughput at batch 1024.</text>
+</svg>

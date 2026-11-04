@@ -1,0 +1,33 @@
+# proto-file: contracts/proto/vectra/config.proto
+# proto-message: vectra.config.v1.IndexParams
+#
+# Index construction and query defaults for every shard.
+#
+# Capacity model (128-d corpus, 10M vectors over the cluster):
+#   PQ codes        16 B/vector  -> 160 MB   (32x smaller than FP32 [22])
+#   FP32 re-rank    512 B/vector -> 5.12 GB  (exact distances for the final
+#                                             re-rank; see
+#                                             docs/research/hnsw-parameter-study.md)
+#   HNSW layer 0    4 + 4*m0 B   -> 1.32 GB  (m0 = 32 links as 32-bit offsets)
+# Everything is RAM-resident and mlock'd.
+
+dimension: 128
+# HNSW [21]: M links per insertion, layer-0 cap 2*M (the paper's choice).
+m: 16
+m0: 32
+ef_construction: 200
+# 16-byte PQ codes need a re-rank beam of ~128-256 to hold recall@10 >= 0.95
+# on high-intrinsic-dimension data; tune with benchmark/recall/.
+ef_search: 128
+rerank_depth: 128
+# Per-shard reservation, including headroom for live ingest.
+max_elements: 4000000
+# 16 sub-quantizers x 8 bits = 16 bytes per vector.
+pq_subspaces: 16
+pq_training_samples: 65536
+pq_kmeans_iterations: 25
+# Radius populations up to this size are scanned exactly instead of
+# traversing the graph with a selective filter.
+exhaustive_scan_threshold: 2048
+build_threads: 8
+seed: 100

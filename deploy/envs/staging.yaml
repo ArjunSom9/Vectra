@@ -1,0 +1,17 @@
+# Ansible inventory: one node per macro-region, smaller cores, same topology
+# as production (engine/configs/cluster_topology.textproto).
+all:
+  vars:
+    ansible_user: deploy
+    housekeeping_cores: "0-3"
+    numa_node: 0
+    nic: enp65s0f0np0
+  children:
+    engine:
+      hosts:
+        stg-west-1.vectra.internal: {shard_id: 1, shard_port: 7101, worker_cores: "4-31"}
+        stg-central-1.vectra.internal: {shard_id: 2, shard_port: 7102, worker_cores: "4-31"}
+        stg-east-1.vectra.internal: {shard_id: 3, shard_port: 7103, worker_cores: "4-31"}
+    inference:
+      hosts:
+        stg-gpu-1.vectra.internal: {gpu: h100-sxm5}

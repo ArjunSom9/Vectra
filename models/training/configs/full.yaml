@@ -1,0 +1,17 @@
+# Larger configuration for the 4M-property corpus on one GPU.
+model:
+  embedding_dim: 128
+  attribute_dim: 5
+  d_model: 256
+  num_heads: 8          # head_dim 32.
+  num_layers: 4
+  ffn_dim: 1024
+  num_candidates: 64
+  min_candidates: 4
+
+training:
+  batch_size: 1024
+  epochs: 20
+  learning_rate: 2.0e-4
+  weight_decay: 0.05
+  seed: 0

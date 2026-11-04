@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "description": "Retrieval-quality acceptance gates (design Section 9; serving/configs/slo.yaml). Reports are benchmark/recall/analyze_recall.py JSON files. 'baseline' holds a recorded run and stays null until one is recorded with compare_snapshots.py --update; it is never filled in by hand.",
+  "checks": {
+    "recall": {
+      "min": {"recall_at_10": 0.95, "boundary_recall": 1.0}
+    }
+  },
+  "regression": {
+    "absolute_tolerance": {"recall_at_10": 0.005},
+    "baseline": null
+  }
+}

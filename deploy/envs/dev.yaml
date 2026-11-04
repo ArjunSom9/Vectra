@@ -1,0 +1,16 @@
+# Ansible inventory: one workstation runs all three shards (ports 7101-7103,
+# as in engine/configs/shard_map.textproto). Use scripts/run_local_cluster.sh
+# for day-to-day development; this inventory exercises provision.yml.
+all:
+  vars:
+    ansible_connection: local
+  children:
+    engine:
+      hosts:
+        localhost:
+          shard_id: 1
+          shard_port: 7101
+          numa_node: 0
+          worker_cores: "2-7"
+          housekeeping_cores: "0-1"
+          nic: lo

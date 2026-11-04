@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/vectra-labs/vectra/data/schemas/property_record.json",
+  "title": "PropertyRecord",
+  "description": "One property as stored in the corpus (one .npy column per field). Mirrors vectra.common.v1.PropertyRecord. x-dtype is the NumPy descriptor the C++ indexer reads; x-unique marks key columns.",
+  "type": "object",
+  "required": [
+    "property_id",
+    "latitude",
+    "longitude",
+    "living_area_sqft",
+    "lot_area_sqft",
+    "bedrooms",
+    "bathrooms",
+    "year_built",
+    "last_sale_price_usd",
+    "last_sale_epoch_day"
+  ],
+  "properties": {
+    "property_id": {"type": "integer", "minimum": 1, "x-dtype": "<i8", "x-unique": true},
+    "latitude": {"type": "number", "minimum": -90, "maximum": 90, "x-dtype": "<f8"},
+    "longitude": {"type": "number", "minimum": -180, "maximum": 180, "x-dtype": "<f8"},
+    "living_area_sqft": {"type": "number", "exclusiveMinimum": 0, "maximum": 100000, "x-dtype": "<f4"},
+    "lot_area_sqft": {"type": "number", "exclusiveMinimum": 0, "maximum": 10000000, "x-dtype": "<f4"},
+    "bedrooms": {"type": "integer", "minimum": 0, "maximum": 50, "x-dtype": "<i4"},
+    "bathrooms": {"type": "number", "minimum": 0, "maximum": 50, "x-dtype": "<f4"},
+    "year_built": {"type": "integer", "minimum": 1700, "maximum": 2025, "x-dtype": "<i4"},
+    "last_sale_price_usd": {"type": "number", "minimum": 0, "x-dtype": "<f8"},
+    "last_sale_epoch_day": {"type": "integer", "minimum": 0, "maximum": 20238, "x-dtype": "<i4"},
+    "geohash6": {"type": "integer", "minimum": 0, "maximum": 1073741823, "x-dtype": "<u4"}
+  }
+}

@@ -1,0 +1,39 @@
+# proto-file: contracts/proto/vectra/config.proto
+# proto-message: vectra.config.v1.ShardMap
+#
+# Deterministic routing table: longest GeoHash prefix wins. This map serves
+# the local three-shard cluster (scripts/run_local_cluster.sh), one shard per
+# macro-region. Production maps are produced at 4-character granularity by
+#   python -m data.pipelines.split_shards --rebalance
+# which balances vector counts while keeping each macro-region's cells on that
+# region's nodes.
+
+shards { id: 1 macro_region: "us-west" endpoints: "localhost:7101" }
+shards { id: 2 macro_region: "us-central" endpoints: "localhost:7102" }
+shards { id: 3 macro_region: "us-east" endpoints: "localhost:7103" }
+
+# us-west: Seattle/Portland (c2), Bay Area/Los Angeles (9q), San Diego (9m),
+# Phoenix (9t), and the interior West (9r, 9w).
+assignments { prefix: "c2" shard_id: 1 }
+assignments { prefix: "9q" shard_id: 1 }
+assignments { prefix: "9m" shard_id: 1 }
+assignments { prefix: "9t" shard_id: 1 }
+assignments { prefix: "9r" shard_id: 1 }
+assignments { prefix: "9w" shard_id: 1 }
+
+# us-central: Denver (9x), Texas (9v), Minneapolis (9z, and cb for its
+# northern suburbs), Chicago (dp), and the plains (9y).
+assignments { prefix: "9x" shard_id: 2 }
+assignments { prefix: "9v" shard_id: 2 }
+assignments { prefix: "9z" shard_id: 2 }
+assignments { prefix: "dp" shard_id: 2 }
+assignments { prefix: "9y" shard_id: 2 }
+assignments { prefix: "cb" shard_id: 2 }
+
+# us-east: Atlanta (dj), Miami (dh), Washington (dq), New York/Boston (dr),
+# and the Southeast (dn).
+assignments { prefix: "dj" shard_id: 3 }
+assignments { prefix: "dh" shard_id: 3 }
+assignments { prefix: "dq" shard_id: 3 }
+assignments { prefix: "dr" shard_id: 3 }
+assignments { prefix: "dn" shard_id: 3 }

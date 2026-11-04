@@ -1,0 +1,43 @@
+# Prometheus 3.4.0 configuration. Targets:
+#   gateway         serving/service.py              :9464  vectra_gateway_*
+#   engine          serving/engine_exporter.py      :9465  vectra_shard_*
+#   node            node_exporter 1.9.1             :9100  node_*
+#   gpu             dcgm-exporter 4.2.3-4.1.1       :9400  DCGM_FI_*
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager.vectra.internal:9093"]
+
+scrape_configs:
+  - job_name: gateway
+    static_configs:
+      - targets: ["gpu-1.vectra.internal:9464", "gpu-2.vectra.internal:9464"]
+
+  - job_name: engine
+    static_configs:
+      - targets: ["monitor.vectra.internal:9465"]
+
+  - job_name: node
+    static_configs:
+      - targets:
+          - west-1.vectra.internal:9100
+          - west-2.vectra.internal:9100
+          - central-1.vectra.internal:9100
+          - central-2.vectra.internal:9100
+          - east-1.vectra.internal:9100
+          - east-2.vectra.internal:9100
+
+  - job_name: gpu
+    static_configs:
+      - targets: ["gpu-1.vectra.internal:9400", "gpu-2.vectra.internal:9400"]
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["monitor.vectra.internal:8888"]

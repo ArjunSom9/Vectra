@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "description": "Latency acceptance gates (design Section 9; serving/configs/slo.yaml). Reports are stress_client --report JSON files (benchmark/qps_latency/run_soak.py). 'baseline' holds a recorded run on the reference environment and stays null until one is recorded with compare_snapshots.py --update; it is never filled in by hand.",
+  "checks": {
+    "search": {
+      "mode": "search",
+      "min": {"offered_qps": 50000, "achieved_qps": 49500},
+      "max": {"p50_us": 1000, "errors": 0}
+    },
+    "dispatch": {
+      "mode": "ping",
+      "min": {"offered_qps": 50000, "achieved_qps": 49500},
+      "max": {"p99_us": 100, "errors": 0}
+    }
+  },
+  "regression": {
+    "relative_tolerance": {"p50_us": 0.10, "p99_us": 0.15, "p999_us": 0.25},
+    "baseline": null
+  }
+}

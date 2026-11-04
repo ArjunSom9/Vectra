@@ -1,0 +1,78 @@
+// Copyright 2025 Texas A&M University
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Shard telemetry and the transport probe used by deliverable A1.
+
+syntax = "proto3";
+
+package vectra.health.v1;
+
+option cc_enable_arenas = true;
+
+service HealthService {
+  // Shard ownership, index composition, memory residency, and per-worker
+  // completion-queue statistics.
+  rpc Report(ReportRequest) returns (ReportResponse);
+  // No-op round trip. The A1 transport test drives this RPC at 50,000 QPS to
+  // isolate dispatch overhead from search work.
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message ReportRequest {}
+
+message ReportResponse {
+  uint32 shard_id = 1;
+  // GeoHash prefixes assigned to this shard by the shard map.
+  repeated string owned_prefixes = 2;
+  IndexStats index = 3;
+  repeated WorkerStats workers = 4;
+  MemoryStats memory = 5;
+  string build_version = 6;
+}
+
+message IndexStats {
+  uint64 num_vectors = 1;
+  uint64 capacity = 2;
+  uint32 dimension = 3;
+  uint32 pq_subspaces = 4;
+  uint32 hnsw_m = 5;
+  uint32 max_level = 6;
+  // Resident bytes of every index structure (vectors, codes, graph, filter).
+  uint64 index_bytes = 7;
+}
+
+message WorkerStats {
+  uint32 worker = 1;
+  // Pinned core, or -1 when the worker is unpinned.
+  int32 core = 2;
+  uint64 rpcs_completed = 3;
+  // Peak number of CallData objects simultaneously in flight on the worker.
+  uint64 call_pool_high_water = 4;
+  // CallData objects allocated after start-up (should stay 0 in steady state).
+  uint64 call_pool_allocations = 5;
+}
+
+message MemoryStats {
+  bool locked = 1;
+  uint64 locked_bytes = 2;
+  string lock_error = 3;
+}
+
+message PingRequest {
+  bytes payload = 1;
+}
+
+message PingResponse {
+  bytes payload = 1;
+}

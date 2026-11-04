@@ -1,0 +1,9 @@
+# Training examples: subjects and their pre-sale comparables
+# (models.training.dataset.DatasetConfig).
+dataset:
+  corpus_dir: data/corpus/dev
+  radius_km: 5.0          # engine/configs/geohash_policy.textproto default.
+  num_candidates: 64      # Must equal model.num_candidates.
+  max_subjects: 50000
+  split_day: 19723        # 2024-01-01: later sales are the validation set.
+  seed: 0

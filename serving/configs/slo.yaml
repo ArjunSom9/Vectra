@@ -1,0 +1,31 @@
+# Service-level objectives: the acceptance gates of the design (Section 9),
+# read by benchmark/ and tests/regression/compare_snapshots.py.
+engine:
+  # O1 / A3: sustained offered load against the production index.
+  sustained_qps: 50000
+  search_p50_us: 1000
+  # A2 / A3: ANN quality against brute force (ANN-Benchmarks protocol).
+  recall_at_10: 0.95
+  # A2: exact routing finds every comparable across shard boundaries.
+  boundary_recall: 1.0
+  # A1: no-op RPCs through the channel pool at the same rate.
+  dispatch_qps: 50000
+  dispatch_p99_us: 100
+  # Load must be offered open-loop; latency is measured from the scheduled
+  # send time so that a stalled server cannot hide its own queueing.
+  load_generator: open_loop
+
+gpu:
+  # O2 / B3 at the serving shape (batch 64, 65 tokens, 4 heads, head_dim 32).
+  dram_bytes_ratio_max: 0.60       # fused / eager, dram__bytes_{read,write}
+  throughput_ratio_min: 3.0        # fused / eager model throughput
+  # O3 / C3: Nsight Compute dram__throughput.avg.pct_of_peak_sustained_elapsed
+  dram_throughput_pct_min: 65
+  dram_throughput_pct_baseline: 40
+  # Numerics gate, checked before any performance number is accepted.
+  numerics_rtol: 1.0e-3
+
+compiler:
+  # C1 / C2: the deployment compile.
+  graph_breaks: 0
+  sites_per_layer: 1

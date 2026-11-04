@@ -1,0 +1,67 @@
+// Copyright 2025 Texas A&M University
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Shard-level approximate nearest neighbor search.
+
+syntax = "proto3";
+
+package vectra.search.v1;
+
+import "vectra/common.proto";
+
+option cc_enable_arenas = true;
+
+service SearchService {
+  // Returns the top_k nearest embeddings within radius_km of location.
+  rpc Search(SearchRequest) returns (SearchResponse);
+}
+
+message SearchRequest {
+  // Must match the shard's embedding dimension.
+  repeated float query_embedding = 1;
+  vectra.common.v1.LatLng location = 2;
+  // Geodesic search radius. 0 selects the policy default. Requests whose
+  // radius would touch more than the 3x3 block of shard cells around the
+  // query are rejected with INVALID_ARGUMENT (the nine-cell routing bound).
+  double radius_km = 3;
+  // Number of neighbors to return (1..1024).
+  uint32 top_k = 4;
+  // Overrides the shard's configured ef_search when non-zero.
+  uint32 ef_search = 5;
+  // Returns candidate embeddings (needed by the inference tier).
+  bool include_embeddings = 6;
+  // Forces exhaustive search over the radius population (oracle mode).
+  bool exact = 7;
+  // When positive, only properties whose last sale precedes this day (days
+  // since 1970-01-01) are returned, so a valuation as of a past date sees
+  // only the sales that had happened by then.
+  int32 sold_before_epoch_day = 8;
+}
+
+message SearchResponse {
+  repeated vectra.common.v1.Candidate candidates = 1;
+  uint32 shard_id = 2;
+  SearchStats stats = 3;
+}
+
+message SearchStats {
+  // Embedding distance evaluations (PQ and exact) spent on the query.
+  uint32 distance_evaluations = 1;
+  // Number of vectors inside the 5-character prefilter cells.
+  uint32 prefilter_population = 2;
+  // True when the population was small enough for an exhaustive scan.
+  bool used_exhaustive_scan = 3;
+  // Wall time spent in the handler, in nanoseconds.
+  uint64 server_latency_ns = 4;
+}
